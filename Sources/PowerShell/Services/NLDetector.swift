@@ -10,6 +10,28 @@ struct NLDetector {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .command }
 
+        // Check shell syntax first — contains pipe, redirect, variable, etc.
+        let shellSyntaxChars: [Character] = ["|", ">", "<", "$", "~"]
+        let shellSyntaxStrings = ["&&", "||", "--", "./"]
+        if trimmed.contains(where: { shellSyntaxChars.contains($0) }) {
+            return .command
+        }
+        if shellSyntaxStrings.contains(where: { trimmed.contains($0) }) {
+            return .command
+        }
+
+        // Check if the first token is a known command (e.g. "git commit -m '中文'")
+        let firstToken = trimmed.split(separator: " ", maxSplits: 1).first.map(String.init) ?? ""
+        if Constants.knownCommands.contains(firstToken) {
+            return .command
+        }
+
+        // Starts with a flag — command
+        if trimmed.hasPrefix("-") {
+            return .command
+        }
+
+        // Only check for natural language AFTER ruling out command patterns
         if trimmed.contains(where: { $0.isChineseCharacter }) {
             return .naturalLanguage
         }
@@ -17,23 +39,6 @@ struct NLDetector {
         let lower = trimmed.lowercased()
         if Constants.nlSentencePatterns.contains(where: { lower.hasPrefix($0) }) {
             return .naturalLanguage
-        }
-
-        let firstToken = trimmed.split(separator: " ", maxSplits: 1).first.map(String.init) ?? ""
-        if Constants.knownCommands.contains(firstToken) {
-            return .command
-        }
-
-        let shellSyntaxPatterns: [Character] = ["|", ">", "<", "$", "~"]
-        let shellSyntaxStrings = ["&&", "||", "--", "./"]
-        if trimmed.contains(where: { shellSyntaxPatterns.contains($0) }) {
-            return .command
-        }
-        if shellSyntaxStrings.contains(where: { trimmed.contains($0) }) {
-            return .command
-        }
-        if trimmed.hasPrefix("-") {
-            return .command
         }
 
         return .command
