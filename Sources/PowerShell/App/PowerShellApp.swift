@@ -6,7 +6,6 @@ struct PowerShellApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var sessionManager = SessionManager()
     @State private var nlViewModel: NLViewModel
-    @State private var inputText = ""
     @State private var llmService = LLMService()
 
     init() {
@@ -24,7 +23,6 @@ struct PowerShellApp: App {
                     TerminalDetailView(
                         session: session,
                         nlViewModel: nlViewModel,
-                        inputText: $inputText,
                         onSessionActivityChanged: { isActive in
                             sessionManager.setActiveActivity(sessionId: session.id, isActive: isActive)
                         }
@@ -78,22 +76,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillBecomeActive(_ notification: Notification) {
-        // Ensure the app is properly activated for keyboard input
         NSApp.activate(ignoringOtherApps: true)
     }
 }
 
 // MARK: - Terminal Reference
 
-/// A shared reference to the underlying LocalProcessTerminalView,
+/// A shared reference to the underlying InterceptingTerminalView,
 /// allowing commands to be sent from the SwiftUI layer.
 @MainActor
 final class TerminalReference: ObservableObject {
-    weak var terminalView: LocalProcessTerminalView?
+    weak var terminalView: InterceptingTerminalView?
 
     func send(_ text: String) {
         guard let terminal = terminalView else { return }
-        terminal.send(txt: text)
+        terminal.sendDirect(text)
     }
 
     func focus() {
@@ -110,7 +107,6 @@ final class TerminalReference: ObservableObject {
 struct TerminalDetailView: View {
     let session: Session
     @Bindable var nlViewModel: NLViewModel
-    @Binding var inputText: String
     let onSessionActivityChanged: (Bool) -> Void
 
     @StateObject private var terminalRef = TerminalReference()
@@ -149,58 +145,108 @@ struct TerminalDetailView: View {
 
             Divider()
 
-            // Terminal
-            TerminalPaneView(
-                shellType: session.shellType,
-                onTitleChanged: { title in
-                    Task { @MainActor in
-                        terminalTitle = title
-                    }
-                },
-                onDirectoryChanged: { directory in
-                    Task { @MainActor in
-                        currentDirectory = directory
-                    }
-                },
-                onProcessTerminated: { _ in
-                    Task { @MainActor in
-                        onSessionActivityChanged(false)
-                    }
-                },
-                onTerminalCreated: { terminal in
-                    Task { @MainActor in
-                        terminalRef.terminalView = terminal
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            terminalRef.focus()
+            // Terminal with suggestion overlay
+            ZStack(alignment: .bottom) {
+                TerminalPaneView(
+                    shellType: session.shellType,
+                    onTitleChanged: { title in
+                        Task { @MainActor in
+                            terminalTitle = title
+                        }
+                    },
+                    onDirectoryChanged: { directory in
+                        Task { @MainActor in
+                            currentDirectory = directory
+                        }
+                    },
+                    onProcessTerminated: { _ in
+                        Task { @MainActor in
+                            onSessionActivityChanged(false)
+                        }
+                    },
+                    onTerminalCreated: { terminal in
+                        Task { @MainActor in
+                            terminalRef.terminalView = terminal
+
+                            terminal.onLineEntered = { line in
+                                handleLineEntered(line)
+                            }
+
+                            terminal.onSuggestionAction = { action in
+                                switch action {
+                                case .confirm:
+                                    handleConfirmSuggestion()
+                                case .cancel:
+                                    nlViewModel.cancelSuggestion()
+                                }
+                            }
+
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                terminalRef.focus()
+                            }
                         }
                     }
-                }
-            )
+                )
 
-            Divider()
-
-            // NL Input Bar
-            NLInputBar(
-                inputText: $inputText,
-                nlRequest: nlViewModel.currentRequest,
-                isConverting: nlViewModel.isConverting,
-                onSubmit: { text in
-                    handleSubmit(text)
-                },
-                onConfirmSuggestion: {
-                    handleConfirmSuggestion()
-                },
-                onEditSuggestion: {
-                    handleEditSuggestion()
-                },
-                onCancelSuggestion: {
-                    nlViewModel.cancelSuggestion()
+                // NL suggestion overlay
+                if let request = nlViewModel.currentRequest {
+                    suggestionOverlay(for: request)
                 }
-            )
+            }
         }
     }
 
-    private func handleSubmit(_ text: String) {
+    @ViewBuilder
+    private func suggestionOverlay(for request: NLRequest) -> some View {
+        switch request.status {
+        case .converting:
+            HStack {
+                ProgressView()
+                    .controlSize(.small)
+                Text("正在转换...")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.black.opacity(0.85))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .padding(8)
+
+        case .suggested:
+            CommandSuggestionView(
+                request: request,
+                onConfirm: { handleConfirmSuggestion() },
+                onEdit: { handleEditSuggestion() },
+                onCancel: { nlViewModel.cancelSuggestion() },
+                darkStyle: true
+            )
+            .padding(8)
+
+        case .error(let message):
+            HStack {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                Spacer()
+                Button("取消") { nlViewModel.cancelSuggestion() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.black.opacity(0.85))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .padding(8)
+
+        default:
+            EmptyView()
+        }
+    }
+
+    private func handleLineEntered(_ line: String) {
         let shellType = session.shellType
         let cwd = currentDirectory ?? NSHomeDirectory()
 
@@ -210,22 +256,19 @@ struct TerminalDetailView: View {
                 shellType: shellType,
                 recentHistory: []
             )
+            _ = await nlViewModel.processInput(line, context: context)
 
-            let inputType = await nlViewModel.processInput(text, context: context)
-
-            if inputType == .command {
-                terminalRef.send(text + "\n")
-            }
-
-            // Return focus to the terminal after submitting
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                terminalRef.focus()
+            // Mark the terminal as having an active suggestion so Enter confirms it
+            if let status = nlViewModel.currentRequest?.status,
+               case .suggested = status {
+                terminalRef.terminalView?.hasActiveSuggestion = true
             }
         }
     }
 
     private func handleConfirmSuggestion() {
         guard let command = nlViewModel.confirmSuggestion() else { return }
+        terminalRef.terminalView?.hasActiveSuggestion = false
         terminalRef.send(command + "\n")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             terminalRef.focus()
@@ -233,11 +276,10 @@ struct TerminalDetailView: View {
     }
 
     private func handleEditSuggestion() {
-        guard let command = nlViewModel.editSuggestion() else { return }
-        inputText = command
-    }
-
-    private func focusTerminal() {
-        terminalRef.focus()
+        guard let _ = nlViewModel.editSuggestion() else { return }
+        // After edit, place the command back in the terminal input
+        // For now, just cancel and let the user retype
+        nlViewModel.cancelSuggestion()
+        terminalRef.terminalView?.hasActiveSuggestion = false
     }
 }
