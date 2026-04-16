@@ -2,6 +2,7 @@ import Foundation
 import Observation
 
 @available(macOS 14.0, *)
+@MainActor
 @Observable
 class SessionManager {
     var sessions: [Session] = []
