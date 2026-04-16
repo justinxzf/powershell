@@ -3,13 +3,16 @@ import SwiftTerm
 
 @main
 struct PowerShellApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var sessionManager = SessionManager()
     @State private var nlViewModel: NLViewModel
     @State private var inputText = ""
+    @State private var llmService = LLMService()
 
     init() {
-        let llmService = LLMService()
-        _nlViewModel = State(initialValue: NLViewModel(llmService: llmService))
+        let service = LLMService()
+        _llmService = State(initialValue: service)
+        _nlViewModel = State(initialValue: NLViewModel(llmService: service))
     }
 
     var body: some Scene {
@@ -43,6 +46,9 @@ struct PowerShellApp: App {
                 }
             }
             .frame(minWidth: 800, minHeight: 500)
+            .task {
+                llmService.loadSavedConfig()
+            }
         }
         .commands {
             CommandGroup(after: .newItem) {
@@ -56,8 +62,24 @@ struct PowerShellApp: App {
         }
 
         Settings {
-            SettingsView()
+            SettingsView(llmService: llmService)
         }
+    }
+}
+
+// MARK: - App Delegate
+
+/// Ensures the app activates properly when launched from the command line.
+/// Without this, the app runs as an .accessory and never receives keyboard events.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func applicationWillBecomeActive(_ notification: Notification) {
+        // Ensure the app is properly activated for keyboard input
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
 
@@ -71,8 +93,15 @@ final class TerminalReference: ObservableObject {
 
     func send(_ text: String) {
         guard let terminal = terminalView else { return }
-        let data = ArraySlice(text.data(using: .utf8) ?? Data())
-        terminal.process.send(data: data)
+        terminal.send(txt: text)
+    }
+
+    func focus() {
+        guard let terminal = terminalView,
+              let window = terminal.window else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(terminal)
     }
 }
 
@@ -137,16 +166,16 @@ struct TerminalDetailView: View {
                     Task { @MainActor in
                         onSessionActivityChanged(false)
                     }
+                },
+                onTerminalCreated: { terminal in
+                    Task { @MainActor in
+                        terminalRef.terminalView = terminal
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            terminalRef.focus()
+                        }
+                    }
                 }
             )
-            .overlay {
-                GeometryReader { proxy in
-                    Color.clear
-                        .onAppear {
-                            findTerminalView(in: proxy)
-                        }
-                }
-            }
 
             Divider()
 
@@ -187,14 +216,20 @@ struct TerminalDetailView: View {
             if inputType == .command {
                 terminalRef.send(text + "\n")
             }
-            // If naturalLanguage, NLViewModel will set currentRequest and
-            // NLInputBar will display the suggestion via CommandSuggestionView.
+
+            // Return focus to the terminal after submitting
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                terminalRef.focus()
+            }
         }
     }
 
     private func handleConfirmSuggestion() {
         guard let command = nlViewModel.confirmSuggestion() else { return }
         terminalRef.send(command + "\n")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            terminalRef.focus()
+        }
     }
 
     private func handleEditSuggestion() {
@@ -202,26 +237,7 @@ struct TerminalDetailView: View {
         inputText = command
     }
 
-    /// Walk the view hierarchy to find the LocalProcessTerminalView NSView
-    /// and store it in our TerminalReference.
-    private func findTerminalView(in proxy: GeometryProxy) {
-        guard let window = NSApp.windows.first(where: { $0.isVisible }),
-              let contentView = window.contentView else { return }
-
-        if let terminal = findLocalProcessTerminalView(in: contentView) {
-            terminalRef.terminalView = terminal
-        }
-    }
-
-    private func findLocalProcessTerminalView(in view: NSView) -> LocalProcessTerminalView? {
-        if let terminal = view as? LocalProcessTerminalView {
-            return terminal
-        }
-        for subview in view.subviews {
-            if let found = findLocalProcessTerminalView(in: subview) {
-                return found
-            }
-        }
-        return nil
+    private func focusTerminal() {
+        terminalRef.focus()
     }
 }

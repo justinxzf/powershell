@@ -12,7 +12,12 @@ class OpenAIProvider: LLMProviding, @unchecked Sendable {
     }
 
     func convert(naturalLanguage: String, context: ShellContext) async throws -> CommandSuggestion {
-        let url = URL(string: "\(baseURL)/v1/chat/completions")!
+        let endpoint = baseURL.hasSuffix("/v1/chat/completions")
+            ? baseURL
+            : baseURL.hasSuffix("/")
+                ? "\(baseURL)v1/chat/completions"
+                : "\(baseURL)/v1/chat/completions"
+        let url = URL(string: endpoint)!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

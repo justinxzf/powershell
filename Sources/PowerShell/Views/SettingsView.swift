@@ -7,23 +7,10 @@ struct SettingsView: View {
     @State private var apiKey = ""
     @State private var showAPIKey = false
     @State private var saveMessage: String?
+    var llmService: LLMService
 
     private var providerType: LLMProviderType {
         LLMProviderType(rawValue: providerTypeRaw) ?? .anthropic
-    }
-
-    private var defaultModel: String {
-        switch providerType {
-        case .anthropic: return "claude-sonnet-4-20250514"
-        case .openAI: return "gpt-4o"
-        }
-    }
-
-    private var defaultBaseURL: String {
-        switch providerType {
-        case .anthropic: return "https://api.anthropic.com"
-        case .openAI: return "https://api.openai.com"
-        }
     }
 
     var body: some View {
@@ -35,8 +22,9 @@ struct SettingsView: View {
                     }
                 }
                 .onChange(of: providerTypeRaw) { _, _ in
-                    model = defaultModel
-                    baseURL = defaultBaseURL
+                    model = providerType.defaultModel
+                    baseURL = providerType.defaultBaseURL
+                    apiKey = (try? KeychainService.load(key: providerType.keychainKey)) ?? ""
                 }
             }
 
@@ -67,7 +55,7 @@ struct SettingsView: View {
                 if let message = saveMessage {
                     Text(message)
                         .font(.caption)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(message.hasPrefix("保存失败") ? .red : .green)
                 }
             }
         }
@@ -80,18 +68,28 @@ struct SettingsView: View {
 
     private func loadConfig() {
         if model.isEmpty {
-            model = defaultModel
+            model = UserDefaults.standard.string(forKey: "llm_model") ?? providerType.defaultModel
         }
         if baseURL.isEmpty {
-            baseURL = defaultBaseURL
+            baseURL = UserDefaults.standard.string(forKey: "llm_base_url") ?? providerType.defaultBaseURL
         }
-        apiKey = (try? KeychainService.load(key: "llm_api_key_\(providerTypeRaw)")) ?? ""
+        apiKey = (try? KeychainService.load(key: providerType.keychainKey)) ?? ""
     }
 
     private func saveConfig() {
         do {
-            try KeychainService.save(key: "llm_api_key_\(providerTypeRaw)", value: apiKey)
-            saveMessage = "配置已保存"
+            try KeychainService.save(key: providerType.keychainKey, value: apiKey)
+
+            // Register the provider with LLMService immediately
+            let provider = llmService.createProvider(
+                type: providerType,
+                apiKey: apiKey,
+                model: model,
+                baseURL: baseURL
+            )
+            llmService.registerProvider(providerType, provider: provider)
+
+            saveMessage = "配置已保存并生效"
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                 saveMessage = nil
             }
