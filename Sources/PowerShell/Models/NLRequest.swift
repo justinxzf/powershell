@@ -20,12 +20,13 @@ struct CommandSuggestion: Sendable {
     let isDangerous: Bool
 }
 
-enum NLStatus: String, Codable, Sendable {
+enum NLStatus: Codable, Sendable {
     case detecting
     case converting
     case suggested
     case confirmed
     case cancelled
+    case error(String)
 }
 
 struct NLRequest: Identifiable, Codable, Sendable {
