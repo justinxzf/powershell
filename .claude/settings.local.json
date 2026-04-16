@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/Users/bytedance/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.7/skills/brainstorming/scripts/start-server.sh *)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "Bash(gh api *)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('Description:', d.get\\('description',''\\)\\); print\\('Default branch:', d.get\\('default_branch',''\\)\\); print\\('Stars:', d.get\\('stargazers_count',''\\)\\); print\\('Latest tag:', d.get\\('pushed_at',''\\)\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('Tag:', d.get\\('tag_name',''\\)\\); print\\('Name:', d.get\\('name',''\\)\\)\")",
+      "Bash(python3 -c \"import sys,json; tags=json.load\\(sys.stdin\\); [print\\(t['name']\\) for t in tags[:10]]\")",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/migueldeicaza/SwiftTerm/master/Package.swift\")",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/migueldeicaza/SwiftTerm/main/Package.swift\")",
+      "Bash(curl -sL \"https://api.github.com/repos/migueldeicaza/SwiftTerm/tags\")",
+      "Bash(curl -sL \"https://api.github.com/repos/migueldeicaza/SwiftTerm/git/trees/master?recursive=1\")",
+      "Bash(python3 -c \" import sys, json data = json.load\\(sys.stdin\\) for item in data.get\\('tree', []\\): p = item['path'] if 'Mac' in p or 'macOS' in p or 'TerminalView' in p or 'LocalProcess' in p or 'PseudoTerminal' in p or 'Pty' in p: print\\(p\\) \")",
+      "Bash(curl *)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\('total_count',0\\), 'results'\\); [print\\(i['path']\\) for i in d.get\\('items',[]\\)]\")",
+      "Bash(python3 -c \" import sys, json d = json.load\\(sys.stdin\\) print\\('Total results:', d.get\\('total_count', 0\\)\\) for item in d.get\\('items', []\\)[:5]: print\\(f\\\\\" {item['repository']['full_name']}: {item['path']}\\\\\"\\) \")",
+      "Bash(python3 -c \" import sys, json d = json.load\\(sys.stdin\\) print\\('Total:', d.get\\('total_count', 0\\)\\) for item in d.get\\('items', []\\)[:5]: print\\(f\\\\\" {item['full_name']} \\({item.get\\('stargazers_count', 0\\)} stars\\): {item.get\\('description', 'No desc'\\)}\\\\\"\\) \")",
+      "Bash(python3 -c \" import sys, json d = json.load\\(sys.stdin\\) print\\('Total:', d.get\\('total_count', 0\\)\\) for item in d.get\\('items', []\\)[:10]: print\\(f\\\\\" {item['repository']['full_name']}: {item['path']}\\\\\"\\) \")",
+      "Bash(python3 -c \" import sys, json data = json.load\\(sys.stdin\\) for item in data.get\\('tree', []\\): p = item['path'] if 'Terminal' in p or 'SwiftTerm' in p or 'Representable' in p: print\\(p\\) \")",
+      "Bash(python3 -c \" import sys, json data = json.load\\(sys.stdin\\) for item in data.get\\('tree', []\\): p = item['path'] if p.endswith\\('.swift'\\) and \\('Terminal' in p or 'SwiftTerm' in p or 'Representable' in p\\): print\\(p\\) \")",
+      "Bash(python3 -c \" import sys, json data = json.load\\(sys.stdin\\) for item in data.get\\('tree', []\\): p = item['path'] if p.endswith\\('.swift'\\) and \\('Terminal' in p or 'SwiftTerm' in p or 'Representable' in p or 'Pty' in p or 'PTY' in p\\): print\\(p\\) \")",
+      "Bash(swift package *)",
+      "Bash(swift --version)",
+      "Bash(xcode-select -p)",
+      "Read(//Applications/**)",
+      "Bash(sudo xcode-select *)",
+      "Bash(swift build *)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ]
+  }
+}
