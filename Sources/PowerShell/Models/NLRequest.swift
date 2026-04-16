@@ -1,48 +1,47 @@
 import Foundation
 
-enum NLStatus {
+struct ShellContext: Sendable {
+    let cwd: String
+    let shellType: ShellType
+    let osInfo: String
+    let recentHistory: [String]
+
+    init(cwd: String, shellType: ShellType, osInfo: String = ProcessInfo.processInfo.operatingSystemVersionString, recentHistory: [String] = []) {
+        self.cwd = cwd
+        self.shellType = shellType
+        self.osInfo = osInfo
+        self.recentHistory = recentHistory
+    }
+}
+
+struct CommandSuggestion: Sendable {
+    let command: String
+    let explanation: String?
+    let isDangerous: Bool
+}
+
+enum NLStatus: String, Codable, Sendable {
     case detecting
     case converting
     case suggested
     case confirmed
     case cancelled
-    case error(String)
 }
 
-struct NLRequest {
+struct NLRequest: Identifiable, Codable, Sendable {
+    let id: UUID
     var input: String
     var suggestedCommand: String?
     var explanation: String?
     var isDangerous: Bool
     var status: NLStatus
 
-    init(input: String) {
+    init(id: UUID = UUID(), input: String, suggestedCommand: String? = nil, explanation: String? = nil, isDangerous: Bool = false, status: NLStatus = .detecting) {
+        self.id = id
         self.input = input
-        self.suggestedCommand = nil
-        self.explanation = nil
-        self.isDangerous = false
-        self.status = .detecting
+        self.suggestedCommand = suggestedCommand
+        self.explanation = explanation
+        self.isDangerous = isDangerous
+        self.status = status
     }
-}
-
-struct ShellContext {
-    let cwd: String
-    let shellType: ShellType
-    let osInfo: String
-    let recentHistory: [String]
-
-    static var current: ShellContext {
-        ShellContext(
-            cwd: FileManager.default.currentDirectoryPath,
-            shellType: .zsh,
-            osInfo: ProcessInfo.processInfo.operatingSystemVersionString,
-            recentHistory: []
-        )
-    }
-}
-
-struct CommandSuggestion {
-    let command: String
-    let explanation: String?
-    let isDangerous: Bool
 }

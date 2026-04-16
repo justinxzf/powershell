@@ -1,8 +1,8 @@
 import Foundation
 
-enum ShellType: String, CaseIterable, Codable {
-    case bash = "/bin/bash"
-    case zsh = "/bin/zsh"
+enum ShellType: String, Codable, CaseIterable, Sendable {
+    case bash
+    case zsh
 
     var displayName: String {
         switch self {
@@ -10,9 +10,16 @@ enum ShellType: String, CaseIterable, Codable {
         case .zsh: return "zsh"
         }
     }
+
+    var launchPath: String {
+        switch self {
+        case .bash: return "/bin/bash"
+        case .zsh: return "/bin/zsh"
+        }
+    }
 }
 
-struct Session: Identifiable, Codable {
+struct Session: Identifiable, Codable, Sendable {
     let id: UUID
     var name: String
     var shellType: ShellType
@@ -23,5 +30,17 @@ struct Session: Identifiable, Codable {
         self.name = name
         self.shellType = shellType
         self.isActive = isActive
+    }
+}
+
+struct TerminalState: Codable, Sendable {
+    var buffer: String
+    var cursorPosition: Int
+    var commandHistory: [String]
+
+    init(buffer: String = "", cursorPosition: Int = 0, commandHistory: [String] = []) {
+        self.buffer = buffer
+        self.cursorPosition = cursorPosition
+        self.commandHistory = commandHistory
     }
 }
