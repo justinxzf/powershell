@@ -24,12 +24,14 @@ struct Session: Identifiable, Codable, Sendable {
     var name: String
     var shellType: ShellType
     var isActive: Bool
+    var needsRename: Bool = false
 
-    init(id: UUID = UUID(), name: String, shellType: ShellType = .zsh, isActive: Bool = false) {
+    init(id: UUID = UUID(), name: String, shellType: ShellType = .zsh, isActive: Bool = false, needsRename: Bool = false) {
         self.id = id
         self.name = name
         self.shellType = shellType
         self.isActive = isActive
+        self.needsRename = needsRename
     }
 }
 

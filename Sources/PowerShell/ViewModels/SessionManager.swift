@@ -30,6 +30,13 @@ class SessionManager {
     func rename(sessionId: UUID, newName: String) {
         if let index = sessions.firstIndex(where: { $0.id == sessionId }) {
             sessions[index].name = newName
+            sessions[index].needsRename = false
+        }
+    }
+
+    func startRenaming(sessionId: UUID) {
+        if let index = sessions.firstIndex(where: { $0.id == sessionId }) {
+            sessions[index].needsRename = true
         }
     }
 
