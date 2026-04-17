@@ -1,9 +1,10 @@
 import SwiftUI
 import SwiftTerm
 
-/// Terminal view subclass that intercepts the `send(source:data:)` delegate method
-/// to detect natural language input. Commands pass through normally; NL input is
-/// intercepted (line cleared with Ctrl+U) and forwarded to the LLM via `onLineEntered`.
+/// Terminal view subclass that intercepts text input to detect natural language.
+/// Text is tracked via `insertText` override (which properly handles IME composition),
+/// while control keys (Enter, Backspace, Ctrl+U/C) are handled in `send(source:data:)`.
+/// NL input is intercepted (line cleared with Ctrl+U) and forwarded to the LLM.
 final class InterceptingTerminalView: LocalProcessTerminalView {
     var onLineEntered: ((String) -> Void)?
     var onSuggestionAction: ((SuggestionAction) -> Void)?
@@ -24,7 +25,20 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
         isSendingDirectly = false
     }
 
-    // MARK: - Intercept data before it reaches the shell process
+    // MARK: - Track text via insertText (handles IME properly)
+
+    public override func insertText(_ string: Any, replacementRange: NSRange) {
+        if !isSendingDirectly && !hasActiveSuggestion {
+            if let str = string as? String {
+                inputBuffer += str
+            } else if let nsStr = string as? NSString {
+                inputBuffer += nsStr as String
+            }
+        }
+        super.insertText(string, replacementRange: replacementRange)
+    }
+
+    // MARK: - Handle control keys in send(source:data:)
 
     public override func send(source: TerminalView, data: ArraySlice<UInt8>) {
         if isSendingDirectly {
@@ -48,7 +62,6 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
             if !line.isEmpty {
                 let inputType = NLDetector.detect(line)
                 if inputType == .naturalLanguage {
-                    // Clear the shell's current line (Ctrl+U) instead of executing
                     super.send(source: source, data: ArraySlice([0x15]))
                     onLineEntered?(line)
                     return
@@ -59,14 +72,13 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
             return
         }
 
-        // Escape key (ESC byte alone)
+        // Escape key alone
         if bytes == [0x1b] {
             if hasActiveSuggestion {
                 hasActiveSuggestion = false
                 onSuggestionAction?(.cancel)
                 return
             }
-            inputBuffer = ""
             super.send(source: source, data: data)
             return
         }
@@ -77,7 +89,7 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
             onSuggestionAction?(.cancel)
         }
 
-        // Backspace
+        // Backspace — remove last character from buffer
         if bytes == [0x7f] || bytes == [0x08] {
             if !inputBuffer.isEmpty { inputBuffer.removeLast() }
             super.send(source: source, data: data)
@@ -91,22 +103,8 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
             return
         }
 
-        // Escape sequences (arrow keys, etc.) — can't track complex editing
-        if bytes.first == 0x1b {
-            inputBuffer = ""
-            super.send(source: source, data: data)
-            return
-        }
-
-        // Regular printable text (ASCII + UTF-8 including CJK)
-        if let text = String(bytes: bytes, encoding: .utf8), !text.isEmpty {
-            inputBuffer += text
-            super.send(source: source, data: data)
-            return
-        }
-
-        // Unknown data — reset buffer and pass through
-        inputBuffer = ""
+        // All other data (escape sequences, text already tracked via insertText, etc.)
+        // Just pass through — don't modify inputBuffer here
         super.send(source: source, data: data)
     }
 }

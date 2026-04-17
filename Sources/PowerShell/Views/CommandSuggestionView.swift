@@ -5,6 +5,7 @@ struct CommandSuggestionView: View {
     let onConfirm: () -> Void
     let onEdit: () -> Void
     let onCancel: () -> Void
+    let onExecuteOriginal: () -> Void
     var darkStyle: Bool = false
 
     private var accentColor: Color { darkStyle ? .cyan : .blue }
@@ -83,6 +84,10 @@ struct CommandSuggestionView: View {
 
             Button("取消 (Esc)") { onCancel() }
                 .buttonStyle(.bordered)
+
+            Button("执行原语句") { onExecuteOriginal() }
+                .buttonStyle(.bordered)
+                .tint(darkStyle ? .orange : .orange)
 
             Spacer()
         }

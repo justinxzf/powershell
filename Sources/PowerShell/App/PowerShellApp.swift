@@ -234,6 +234,7 @@ struct TerminalDetailView: View {
                 onConfirm: { handleConfirmSuggestion() },
                 onEdit: { handleEditSuggestion() },
                 onCancel: { nlViewModel.cancelSuggestion() },
+                onExecuteOriginal: { handleExecuteOriginal() },
                 darkStyle: true
             )
             .padding(8)
@@ -292,9 +293,18 @@ struct TerminalDetailView: View {
 
     private func handleEditSuggestion() {
         guard let _ = nlViewModel.editSuggestion() else { return }
-        // After edit, place the command back in the terminal input
-        // For now, just cancel and let the user retype
         nlViewModel.cancelSuggestion()
         terminalRef.terminalView?.hasActiveSuggestion = false
+    }
+
+    private func handleExecuteOriginal() {
+        guard let request = nlViewModel.currentRequest else { return }
+        let original = request.input
+        nlViewModel.cancelSuggestion()
+        terminalRef.terminalView?.hasActiveSuggestion = false
+        terminalRef.send(original + "\n")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            terminalRef.focus()
+        }
     }
 }
