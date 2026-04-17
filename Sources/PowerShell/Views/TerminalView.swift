@@ -5,6 +5,8 @@ import SwiftTerm
 /// Text is tracked via `insertText` override (which properly handles IME composition),
 /// while control keys (Enter, Backspace, Ctrl+U/C) are handled in `send(source:data:)`.
 /// NL input is intercepted (line cleared with Ctrl+U) and forwarded to the LLM.
+/// When history navigation (Up/Down) is used, NL detection is skipped since we
+/// can't accurately track the shell-populated history content.
 final class InterceptingTerminalView: LocalProcessTerminalView {
     var onLineEntered: ((String) -> Void)?
     var onSuggestionAction: ((SuggestionAction) -> Void)?
@@ -12,6 +14,7 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
 
     private var inputBuffer = ""
     private var isSendingDirectly = false
+    private var bufferReliable = true
 
     enum SuggestionAction {
         case confirm
@@ -48,6 +51,14 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
 
         let bytes = Array(data)
 
+        // Up/Down arrow — history navigation makes buffer unreliable
+        if isHistoryNavigation(bytes) {
+            bufferReliable = false
+            inputBuffer = ""
+            super.send(source: source, data: data)
+            return
+        }
+
         // Enter key (CR or LF)
         if bytes == [13] || bytes == [10] {
             if hasActiveSuggestion {
@@ -56,10 +67,13 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
                 return
             }
 
+            let reliable = bufferReliable
+            bufferReliable = true
             let line = inputBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
             inputBuffer = ""
 
-            if !line.isEmpty {
+            // Only do NL detection if buffer is reliable (no history navigation)
+            if reliable && !line.isEmpty {
                 let inputType = NLDetector.detect(line)
                 if inputType == .naturalLanguage {
                     super.send(source: source, data: ArraySlice([0x15]))
@@ -96,16 +110,28 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
             return
         }
 
-        // Ctrl+U (clear line) or Ctrl+C (interrupt)
+        // Ctrl+U (clear line) or Ctrl+C (interrupt) — reset everything
         if bytes == [0x15] || bytes == [0x03] {
             inputBuffer = ""
+            bufferReliable = true
             super.send(source: source, data: data)
             return
         }
 
-        // All other data (escape sequences, text already tracked via insertText, etc.)
-        // Just pass through — don't modify inputBuffer here
+        // All other data (escape sequences for left/right, etc.)
         super.send(source: source, data: data)
+    }
+
+    // MARK: - History navigation detection
+
+    private func isHistoryNavigation(_ bytes: [UInt8]) -> Bool {
+        // Up:    ESC [ A  or  ESC O A
+        // Down:  ESC [ B  or  ESC O B
+        if bytes.count == 3 && bytes[0] == 0x1b {
+            if bytes[1] == 0x5b && (bytes[2] == 0x41 || bytes[2] == 0x42) { return true }
+            if bytes[1] == 0x4f && (bytes[2] == 0x41 || bytes[2] == 0x42) { return true }
+        }
+        return false
     }
 }
 
