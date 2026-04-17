@@ -19,28 +19,35 @@ struct PowerShellApp: App {
             NavigationSplitView {
                 SidebarView(sessionManager: sessionManager)
             } detail: {
-                if let session = sessionManager.activeSession {
-                    TerminalDetailView(
-                        session: session,
-                        nlViewModel: nlViewModel,
-                        onSessionActivityChanged: { isActive in
-                            sessionManager.setActiveActivity(sessionId: session.id, isActive: isActive)
-                        }
-                    )
-                } else {
-                    VStack(spacing: 12) {
-                        Image(systemName: "terminal")
-                            .font(.system(size: 48))
-                            .foregroundStyle(.secondary)
-                        Text("No Active Session")
-                            .font(.title2)
-                            .foregroundStyle(.secondary)
-                        Button("Create Session") {
-                            _ = sessionManager.createSession()
-                        }
-                        .buttonStyle(.borderedProminent)
+                ZStack {
+                    ForEach(sessionManager.sessions) { session in
+                        TerminalDetailView(
+                            session: session,
+                            nlViewModel: nlViewModel,
+                            isActive: session.id == sessionManager.activeSessionId,
+                            onSessionActivityChanged: { isActive in
+                                sessionManager.setActiveActivity(sessionId: session.id, isActive: isActive)
+                            }
+                        )
+                        .opacity(session.id == sessionManager.activeSessionId ? 1 : 0)
+                        .allowsHitTesting(session.id == sessionManager.activeSessionId)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    if sessionManager.activeSession == nil {
+                        VStack(spacing: 12) {
+                            Image(systemName: "terminal")
+                                .font(.system(size: 48))
+                                .foregroundStyle(.secondary)
+                            Text("No Active Session")
+                                .font(.title2)
+                                .foregroundStyle(.secondary)
+                            Button("Create Session") {
+                                _ = sessionManager.createSession()
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 }
             }
             .frame(minWidth: 800, minHeight: 500)
@@ -107,6 +114,7 @@ final class TerminalReference: ObservableObject {
 struct TerminalDetailView: View {
     let session: Session
     @Bindable var nlViewModel: NLViewModel
+    let isActive: Bool
     let onSessionActivityChanged: (Bool) -> Void
 
     @StateObject private var terminalRef = TerminalReference()
@@ -191,6 +199,13 @@ struct TerminalDetailView: View {
                 // NL suggestion overlay
                 if let request = nlViewModel.currentRequest {
                     suggestionOverlay(for: request)
+                }
+            }
+        }
+        .onChange(of: isActive) { _, nowActive in
+            if nowActive {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    terminalRef.focus()
                 }
             }
         }
