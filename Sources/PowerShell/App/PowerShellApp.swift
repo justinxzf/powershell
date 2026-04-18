@@ -173,6 +173,7 @@ private struct RootContentView: View {
         .toolbar {
             ToolbarItem(placement: chrome.titlePlacement) {
                 Text(chrome.toolbarTitle)
+                    .fontWeight(.bold)
             }
         }
         .background(
@@ -303,7 +304,7 @@ struct TerminalDetailView: View {
                     .frame(width: 8, height: 8)
 
                 Text(terminalTitle.isEmpty ? session.name : terminalTitle)
-                    .font(.headline)
+                    .font(.body)
                     .lineLimit(1)
 
                 Text(session.shellType.displayName)
