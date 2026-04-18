@@ -7,6 +7,7 @@ struct PowerShellApp: App {
     @State private var sessionManager = SessionManager()
     @State private var nlViewModel: NLViewModel
     @State private var llmService = LLMService()
+    @State private var themeManager = ThemeManager()
 
     init() {
         let service = LLMService()
@@ -24,6 +25,7 @@ struct PowerShellApp: App {
                         TerminalDetailView(
                             session: session,
                             nlViewModel: nlViewModel,
+                            themeManager: themeManager,
                             isActive: session.id == sessionManager.activeSessionId,
                             onSessionActivityChanged: { isActive in
                                 sessionManager.setActiveActivity(sessionId: session.id, isActive: isActive)
@@ -126,7 +128,7 @@ struct PowerShellApp: App {
         }
 
         Settings {
-            SettingsView(llmService: llmService)
+            SettingsView(llmService: llmService, themeManager: themeManager)
         }
     }
 }
@@ -173,6 +175,7 @@ final class TerminalReference: ObservableObject {
 struct TerminalDetailView: View {
     let session: Session
     @Bindable var nlViewModel: NLViewModel
+    let themeManager: ThemeManager
     let isActive: Bool
     let onSessionActivityChanged: (Bool) -> Void
     var onDirectoryChanged: ((String?) -> Void)?
@@ -219,6 +222,7 @@ struct TerminalDetailView: View {
             ZStack(alignment: .bottom) {
                 TerminalPaneView(
                     shellType: session.shellType,
+                    theme: themeManager.currentTheme,
                     onTitleChanged: { title in
                         Task { @MainActor in
                             terminalTitle = title
@@ -295,11 +299,11 @@ struct TerminalDetailView: View {
                     .controlSize(.small)
                 Text("正在转换...")
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.8))
+                    .foregroundStyle(themeManager.currentTheme.appearance.isDark ? .white.opacity(0.8) : .primary)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color.black.opacity(0.85))
+            .background(themeManager.currentTheme.appearance.isDark ? Color.black.opacity(0.85) : Color.white.opacity(0.9))
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .padding(8)
 
@@ -310,7 +314,7 @@ struct TerminalDetailView: View {
                 onEdit: { handleEditSuggestion() },
                 onCancel: { nlViewModel.cancelSuggestion() },
                 onExecuteOriginal: { handleExecuteOriginal() },
-                darkStyle: true
+                darkStyle: themeManager.currentTheme.appearance.isDark
             )
             .padding(8)
 
@@ -328,7 +332,7 @@ struct TerminalDetailView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color.black.opacity(0.85))
+            .background(themeManager.currentTheme.appearance.isDark ? Color.black.opacity(0.85) : Color.white.opacity(0.9))
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .padding(8)
 

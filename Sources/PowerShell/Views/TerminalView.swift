@@ -163,6 +163,7 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
 
 struct TerminalPaneView: NSViewRepresentable {
     let shellType: ShellType
+    let theme: TerminalTheme
     let onTitleChanged: (@Sendable (String) -> Void)?
     let onDirectoryChanged: (@Sendable (String?) -> Void)?
     let onProcessTerminated: (@Sendable (Int32?) -> Void)?
@@ -177,8 +178,9 @@ struct TerminalPaneView: NSViewRepresentable {
         let terminal = InterceptingTerminalView(frame: .zero)
         terminal.processDelegate = context.coordinator
         terminal.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        terminal.nativeBackgroundColor = NSColor(red: 0.12, green: 0.12, blue: 0.12, alpha: 1)
-        terminal.nativeForegroundColor = NSColor(red: 0.8, green: 0.8, blue: 0.8, alpha: 1)
+        terminal.nativeBackgroundColor = theme.nsBackgroundColor
+        terminal.nativeForegroundColor = theme.nsForegroundColor
+        terminal.installColors(theme.swiftTermAnsiColors)
         terminal.startProcess(executable: shellType.launchPath)
 
         let hostView = TerminalHostView(terminalView: terminal)
@@ -195,13 +197,21 @@ struct TerminalPaneView: NSViewRepresentable {
         return hostView
     }
 
-    func updateNSView(_ nsView: TerminalHostView, context: Context) {}
+    func updateNSView(_ nsView: TerminalHostView, context: Context) {
+        let terminal = nsView.terminalView
+        guard context.coordinator.lastAppliedThemeId != theme.id else { return }
+        context.coordinator.lastAppliedThemeId = theme.id
+        terminal.nativeBackgroundColor = theme.nsBackgroundColor
+        terminal.nativeForegroundColor = theme.nsForegroundColor
+        terminal.installColors(theme.swiftTermAnsiColors)
+    }
 
     final class Coordinator: NSObject, LocalProcessTerminalViewDelegate {
         private let onTitleChanged: (@Sendable (String) -> Void)?
         private let onDirectoryChanged: (@Sendable (String?) -> Void)?
         private let onProcessTerminated: (@Sendable (Int32?) -> Void)?
         weak var hostView: TerminalHostView?
+        var lastAppliedThemeId: String?
 
         init(parent: TerminalPaneView) {
             self.onTitleChanged = parent.onTitleChanged
