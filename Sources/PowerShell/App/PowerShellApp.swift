@@ -41,7 +41,9 @@ final class FullScreenToolbarConfigurator: NSObject, FullScreenToolbarPersisting
 
     private func applyFullScreenToolbarPersistence(to window: NSWindow) {
         window.toolbar?.showsBaselineSeparator = false
-        window.toolbarStyle = .unified
+        window.toolbarStyle = .unifiedCompact
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
     }
 }
 
@@ -68,6 +70,8 @@ struct PowerShellApp: App {
                 themeManager: themeManager
             )
         }
+        .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unifiedCompact(showsTitle: false))
         .commands {
             CommandGroup(after: .newItem) {
                 Button("New bash Session") {
@@ -110,6 +114,7 @@ private struct RootContentView: View {
     var body: some View {
         NavigationSplitView {
             SidebarView(sessionManager: sessionManager)
+                .navigationTitle("")
         } detail: {
             ZStack {
                 ForEach(sessionManager.sessions) { session in
@@ -164,7 +169,7 @@ private struct RootContentView: View {
             }
         }
         .frame(minWidth: 800, minHeight: 500)
-        .navigationTitle(chrome.navigationTitle ?? "")
+        .navigationTitle("")
         .toolbar {
             ToolbarItem(placement: chrome.titlePlacement) {
                 Text(chrome.toolbarTitle)

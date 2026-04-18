@@ -22,7 +22,9 @@ final class PowerShellAppTitleBarTests: XCTestCase {
         let configurator = FullScreenToolbarConfigurator()
         configurator.apply(to: window)
 
-        XCTAssertEqual(window.toolbarStyle, .unified)
+        XCTAssertEqual(window.toolbarStyle, .unifiedCompact)
+        XCTAssertEqual(window.titleVisibility, .hidden)
+        XCTAssertTrue(window.titlebarAppearsTransparent)
         XCTAssertFalse(toolbar.showsBaselineSeparator)
         XCTAssertTrue(window.delegate === configurator)
     }
@@ -42,7 +44,9 @@ final class PowerShellAppTitleBarTests: XCTestCase {
         configurator.apply(to: window)
 
         XCTAssertTrue(window.delegate === firstDelegate)
-        XCTAssertEqual(window.toolbarStyle, .unified)
+        XCTAssertEqual(window.toolbarStyle, .unifiedCompact)
+        XCTAssertEqual(window.titleVisibility, .hidden)
+        XCTAssertTrue(window.titlebarAppearsTransparent)
         XCTAssertFalse(toolbar.showsBaselineSeparator)
     }
 }
