@@ -32,7 +32,7 @@ final class NotificationManager: NSObject {
         if canUseUNNotifications {
             sendUNNotification(title: title, body: body, sessionId: sessionId)
         } else {
-            FloatingNotificationBanner.show(title: title, body: body)
+            FloatingNotificationBanner.show(title: title, body: body, sessionId: sessionId)
         }
     }
 
@@ -78,15 +78,18 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
 // MARK: - Floating Banner (fallback for non-app-bundle runs)
 
 private final class FloatingNotificationBanner: NSPanel {
-    static func show(title: String, body: String) {
+    static func show(title: String, body: String, sessionId: String) {
         DispatchQueue.main.async {
-            let banner = FloatingNotificationBanner(title: title, body: body)
+            let banner = FloatingNotificationBanner(title: title, body: body, sessionId: sessionId)
             banner.makeKeyAndOrderFront(nil)
             banner.slideIn()
         }
     }
 
-    private init(title: String, body: String) {
+    private let sessionId: String
+
+    private init(title: String, body: String, sessionId: String) {
+        self.sessionId = sessionId
         // Close button
         let closeButton = NSButton(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
         closeButton.bezelStyle = .inline
@@ -135,20 +138,30 @@ private final class FloatingNotificationBanner: NSPanel {
             defer: false
         )
 
-        contentView = stack
+        let clickView = ClickableView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        clickView.wantsLayer = true
+        clickView.layer?.backgroundColor = NSColor(white: 0.15, alpha: 0.92).cgColor
+        clickView.layer?.cornerRadius = 10
+        clickView.onClicked = { [weak self] in
+            guard let self else { return }
+            NotificationManager.shared.onNotificationClicked?(self.sessionId)
+            self.dismiss()
+        }
+
+        stack.frame = clickView.bounds
+        stack.autoresizingMask = [.width, .height]
+        clickView.addSubview(stack)
+
+        closeButton.target = self
+        closeButton.action = #selector(dismiss)
+
+        contentView = clickView
         isFloatingPanel = true
         level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         backgroundColor = .clear
         isOpaque = false
         hasShadow = true
-
-        stack.wantsLayer = true
-        stack.layer?.backgroundColor = NSColor(white: 0.15, alpha: 0.92).cgColor
-        stack.layer?.cornerRadius = 10
-
-        closeButton.target = self
-        closeButton.action = #selector(dismiss)
     }
 
     @available(*, unavailable)
@@ -193,5 +206,15 @@ private final class FloatingNotificationBanner: NSPanel {
                 self?.close()
             }
         })
+    }
+}
+
+// MARK: - Clickable background view
+
+private final class ClickableView: NSView {
+    var onClicked: (() -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        onClicked?()
     }
 }

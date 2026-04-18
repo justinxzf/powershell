@@ -83,6 +83,7 @@ struct PowerShellApp: App {
                 NotificationManager.shared.onNotificationClicked = { sessionIdString in
                     guard let sessionId = UUID(uuidString: sessionIdString) else { return }
                     sessionManager.switchTo(sessionId: sessionId)
+                    NSApp.activate(ignoringOtherApps: true)
                 }
 
                 // Start hook notification server for Claude Code events
