@@ -41,7 +41,10 @@
       "Bash(echo \"\")",
       "Read(//tmp/**)",
       "Bash(grep -v grep echo \"---\" lsof -iTCP:9786)",
-      "Bash(python3 -m json.tool)"
+      "Bash(python3 -m json.tool)",
+      "Bash(git check-ignore *)",
+      "Bash(git worktree *)",
+      "Bash(git *)"
     ]
   }
 }
