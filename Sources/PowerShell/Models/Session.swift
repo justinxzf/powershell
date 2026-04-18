@@ -25,6 +25,8 @@ struct Session: Identifiable, Codable, Sendable {
     var shellType: ShellType
     var isActive: Bool
     var needsRename: Bool = false
+    var claudeCodeActive: Bool = false
+    var currentDirectory: String?
 
     init(id: UUID = UUID(), name: String, shellType: ShellType = .zsh, isActive: Bool = false, needsRename: Bool = false) {
         self.id = id

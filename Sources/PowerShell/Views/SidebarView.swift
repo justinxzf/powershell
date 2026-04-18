@@ -10,6 +10,7 @@ struct SidebarView: View {
                 SidebarItemRow(
                     session: session,
                     isSelected: session.id == sessionManager.activeSessionId,
+                    unreadCount: sessionManager.unreadCounts[session.id] ?? 0,
                     onRename: { newName in
                         sessionManager.rename(sessionId: session.id, newName: newName)
                     }
@@ -54,6 +55,7 @@ struct SidebarView: View {
 struct SidebarItemRow: View {
     let session: Session
     let isSelected: Bool
+    let unreadCount: Int
     let onRename: (String) -> Void
 
     @State private var isEditing = false
@@ -63,7 +65,7 @@ struct SidebarItemRow: View {
     var body: some View {
         HStack(spacing: 6) {
             Circle()
-                .fill(session.isActive ? Color.green : Color.gray.opacity(0.5))
+                .fill(session.claudeCodeActive ? Color.purple : (session.isActive ? Color.green : Color.gray.opacity(0.5)))
                 .frame(width: 8, height: 8)
 
             if isEditing {
@@ -93,6 +95,14 @@ struct SidebarItemRow: View {
             }
 
             Spacer()
+            if unreadCount > 0 {
+                Text(unreadCount > 9 ? "9+" : "\(unreadCount)")
+                    .font(.caption2)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Color.red, in: Capsule())
+            }
             Text(session.shellType.displayName)
                 .font(.caption2)
                 .foregroundStyle(.secondary)

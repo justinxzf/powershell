@@ -10,11 +10,14 @@ import SwiftTerm
 final class InterceptingTerminalView: LocalProcessTerminalView {
     var onLineEntered: ((String) -> Void)?
     var onSuggestionAction: ((SuggestionAction) -> Void)?
+    var onAttentionNeeded: ((AttentionType) -> Void)?
     var hasActiveSuggestion = false
+    var skipNLDetection = false
 
     private var inputBuffer = ""
     private var isSendingDirectly = false
     private var bufferReliable = true
+    private let outputMonitor = OutputMonitor()
 
     enum SuggestionAction {
         case confirm
@@ -37,8 +40,22 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
             } else if let nsStr = string as? NSString {
                 inputBuffer += nsStr as String
             }
+            outputMonitor.reset()
         }
         super.insertText(string, replacementRange: replacementRange)
+    }
+
+    // MARK: - Monitor output for attention signals
+
+    public override func dataReceived(slice: ArraySlice<UInt8>) {
+        super.dataReceived(slice: slice)
+        outputMonitor.processOutput(slice: slice)
+    }
+
+    func setupOutputMonitor() {
+        outputMonitor.onAttentionNeeded = { [weak self] type in
+            self?.onAttentionNeeded?(type)
+        }
     }
 
     // MARK: - Handle control keys in send(source:data:)
@@ -71,6 +88,12 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
             bufferReliable = true
             let line = inputBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
             inputBuffer = ""
+
+            // When Claude Code is active, pass all input directly
+            if skipNLDetection {
+                super.send(source: source, data: data)
+                return
+            }
 
             // Only do NL detection if buffer is reliable (no history navigation)
             if reliable && !line.isEmpty {

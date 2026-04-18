@@ -27,6 +27,24 @@ struct PowerShellApp: App {
                             isActive: session.id == sessionManager.activeSessionId,
                             onSessionActivityChanged: { isActive in
                                 sessionManager.setActiveActivity(sessionId: session.id, isActive: isActive)
+                            },
+                            onDirectoryChanged: { directory in
+                                sessionManager.updateDirectory(sessionId: session.id, directory: directory)
+                            },
+                            onAttentionNeeded: { type in
+                                // Only notify when this session is NOT active (user is elsewhere)
+                                guard session.id != sessionManager.activeSessionId else { return }
+
+                                switch type {
+                                case .oscNotification(let title, let msg):
+                                    let body = "\(title): \(msg)"
+                                    NotificationManager.shared.send(
+                                        title: "PowerShell",
+                                        body: body,
+                                        sessionId: session.id.uuidString
+                                    )
+                                    sessionManager.incrementUnread(sessionId: session.id)
+                                }
                             }
                         )
                         .opacity(session.id == sessionManager.activeSessionId ? 1 : 0)
@@ -53,6 +71,35 @@ struct PowerShellApp: App {
             .frame(minWidth: 800, minHeight: 500)
             .task {
                 llmService.loadSavedConfig()
+                NotificationManager.shared.requestAuthorization()
+                NotificationManager.shared.onNotificationClicked = { sessionIdString in
+                    guard let sessionId = UUID(uuidString: sessionIdString) else { return }
+                    sessionManager.switchTo(sessionId: sessionId)
+                }
+
+                // Start hook notification server for Claude Code events
+                HookNotificationServer.shared.onHookNotification = { event in
+                    let claudeSessionId = event.session_id ?? ""
+
+                    switch event.hook_event_name {
+                    case "SessionStart":
+                        sessionManager.handleClaudeSessionStart(claudeSessionId: claudeSessionId)
+                    case "SessionEnd":
+                        sessionManager.handleClaudeSessionEnd(claudeSessionId: claudeSessionId)
+                    default:
+                        let targetSessionId = sessionManager.sessionForClaudeSession(claudeSessionId)
+                            ?? sessionManager.activeSessionId
+                        NotificationManager.shared.send(
+                            title: event.displayTitle,
+                            body: event.displayMessage,
+                            sessionId: targetSessionId?.uuidString ?? ""
+                        )
+                        if let id = targetSessionId {
+                            sessionManager.incrementUnread(sessionId: id)
+                        }
+                    }
+                }
+                HookNotificationServer.shared.start()
             }
         }
         .commands {
@@ -116,6 +163,8 @@ struct TerminalDetailView: View {
     @Bindable var nlViewModel: NLViewModel
     let isActive: Bool
     let onSessionActivityChanged: (Bool) -> Void
+    var onDirectoryChanged: ((String?) -> Void)?
+    var onAttentionNeeded: ((AttentionType) -> Void)?
 
     @StateObject private var terminalRef = TerminalReference()
     @State private var terminalTitle: String = ""
@@ -165,6 +214,7 @@ struct TerminalDetailView: View {
                     onDirectoryChanged: { directory in
                         Task { @MainActor in
                             currentDirectory = directory
+                            onDirectoryChanged?(directory)
                         }
                     },
                     onProcessTerminated: { _ in
@@ -189,6 +239,12 @@ struct TerminalDetailView: View {
                                 }
                             }
 
+                            terminal.onAttentionNeeded = { type in
+                                onAttentionNeeded?(type)
+                            }
+
+                            terminal.setupOutputMonitor()
+
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                                 terminalRef.focus()
                             }
@@ -208,6 +264,9 @@ struct TerminalDetailView: View {
                     terminalRef.focus()
                 }
             }
+        }
+        .onChange(of: session.claudeCodeActive) { _, active in
+            terminalRef.terminalView?.skipNLDetection = active
         }
     }
 

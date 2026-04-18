@@ -7,6 +7,10 @@ import Observation
 class SessionManager {
     var sessions: [Session] = []
     var activeSessionId: UUID?
+    var unreadCounts: [UUID: Int] = [:]
+
+    // Maps Claude Code session_id → app Session UUID
+    private var claudeSessionMap: [String: UUID] = [:]
 
     var activeSession: Session? {
         sessions.first { $0.id == activeSessionId }
@@ -25,6 +29,7 @@ class SessionManager {
     func switchTo(sessionId: UUID) {
         guard sessions.contains(where: { $0.id == sessionId }) else { return }
         activeSessionId = sessionId
+        clearUnread(sessionId: sessionId)
     }
 
     func rename(sessionId: UUID, newName: String) {
@@ -45,6 +50,7 @@ class SessionManager {
         if activeSessionId == sessionId {
             activeSessionId = sessions.first?.id
         }
+        claudeSessionMap = claudeSessionMap.filter { $0.value != sessionId }
     }
 
     func setActiveActivity(sessionId: UUID, isActive: Bool) {
@@ -52,4 +58,44 @@ class SessionManager {
             sessions[index].isActive = isActive
         }
     }
+
+    func updateDirectory(sessionId: UUID, directory: String?) {
+        if let index = sessions.firstIndex(where: { $0.id == sessionId }) {
+            sessions[index].currentDirectory = directory
+        }
+    }
+
+    func incrementUnread(sessionId: UUID) {
+        unreadCounts[sessionId, default: 0] += 1
+    }
+
+    func clearUnread(sessionId: UUID) {
+        unreadCounts.removeValue(forKey: sessionId)
+    }
+
+    // MARK: - Claude Code session tracking
+
+    func handleClaudeSessionStart(claudeSessionId: String) {
+        guard let sessionId = activeSessionId else { return }
+        claudeSessionMap[claudeSessionId] = sessionId
+        if let index = sessions.firstIndex(where: { $0.id == sessionId }) {
+            sessions[index].claudeCodeActive = true
+        }
+    }
+
+    func handleClaudeSessionEnd(claudeSessionId: String) {
+        guard let sessionId = claudeSessionMap.removeValue(forKey: claudeSessionId) else { return }
+        if let index = sessions.firstIndex(where: { $0.id == sessionId }) {
+            sessions[index].claudeCodeActive = false
+        }
+    }
+
+    func sessionForClaudeSession(_ claudeSessionId: String) -> UUID? {
+        claudeSessionMap[claudeSessionId]
+    }
+
+    func sessionForCwd(_ cwd: String) -> UUID? {
+        sessions.first { $0.currentDirectory == cwd }?.id
+    }
+
 }

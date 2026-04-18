@@ -30,7 +30,18 @@
       "Bash(git init *)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(swift test *)"
+      "Bash(swift test *)",
+      "Bash(chmod +x *)",
+      "Bash(swift run *)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(lsof -iTCP:9786 -sTCP:LISTEN)",
+      "Bash(pkill -f \"PowerShell\")",
+      "Bash(grep -v grep echo \"---\")",
+      "Bash(log show *)",
+      "Bash(echo \"\")",
+      "Read(//tmp/**)",
+      "Bash(grep -v grep echo \"---\" lsof -iTCP:9786)",
+      "Bash(python3 -m json.tool)"
     ]
   }
 }
