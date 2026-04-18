@@ -11,6 +11,7 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
     var onLineEntered: ((String) -> Void)?
     var onSuggestionAction: ((SuggestionAction) -> Void)?
     var onAttentionNeeded: ((AttentionType) -> Void)?
+    var onTerminalFocused: (() -> Void)?
     var hasActiveSuggestion = false
     var skipNLDetection = false
 
@@ -166,6 +167,7 @@ struct TerminalPaneView: NSViewRepresentable {
     let onDirectoryChanged: (@Sendable (String?) -> Void)?
     let onProcessTerminated: (@Sendable (Int32?) -> Void)?
     let onTerminalCreated: (@Sendable (InterceptingTerminalView) -> Void)?
+    let onFocus: (() -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -183,6 +185,12 @@ struct TerminalPaneView: NSViewRepresentable {
         context.coordinator.hostView = hostView
 
         onTerminalCreated?(terminal)
+        terminal.onTerminalFocused = { [weak terminal] in
+            guard terminal != nil else { return }
+            DispatchQueue.main.async {
+                onFocus?()
+            }
+        }
 
         return hostView
     }
@@ -252,7 +260,11 @@ final class TerminalHostView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     override func becomeFirstResponder() -> Bool {
-        window?.makeFirstResponder(terminalView) ?? false
+        let result = window?.makeFirstResponder(terminalView) ?? false
+        if result {
+            terminalView.onTerminalFocused?()
+        }
+        return result
     }
 
     override func viewDidMoveToWindow() {

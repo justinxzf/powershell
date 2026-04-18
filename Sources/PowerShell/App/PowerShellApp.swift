@@ -45,6 +45,9 @@ struct PowerShellApp: App {
                                     )
                                     sessionManager.incrementUnread(sessionId: session.id)
                                 }
+                            },
+                            onTerminalFocused: {
+                                sessionManager.clearUnread(sessionId: session.id)
                             }
                         )
                         .opacity(session.id == sessionManager.activeSessionId ? 1 : 0)
@@ -69,6 +72,11 @@ struct PowerShellApp: App {
                 }
             }
             .frame(minWidth: 800, minHeight: 500)
+            .onChange(of: sessionManager.activeSessionId) { _, newId in
+                if let id = newId {
+                    sessionManager.clearUnread(sessionId: id)
+                }
+            }
             .task {
                 llmService.loadSavedConfig()
                 NotificationManager.shared.requestAuthorization()
@@ -165,6 +173,7 @@ struct TerminalDetailView: View {
     let onSessionActivityChanged: (Bool) -> Void
     var onDirectoryChanged: ((String?) -> Void)?
     var onAttentionNeeded: ((AttentionType) -> Void)?
+    var onTerminalFocused: (() -> Void)?
 
     @StateObject private var terminalRef = TerminalReference()
     @State private var terminalTitle: String = ""
@@ -249,6 +258,9 @@ struct TerminalDetailView: View {
                                 terminalRef.focus()
                             }
                         }
+                    },
+                    onFocus: {
+                        onTerminalFocused?()
                     }
                 )
 
