@@ -37,7 +37,7 @@ struct PowerShellApp: App {
 
                                 switch type {
                                 case .oscNotification(let title, let msg):
-                                    let body = "\(title): \(msg)"
+                                    let body = "[\(session.name)] \(title): \(msg)"
                                     NotificationManager.shared.send(
                                         title: "PowerShell",
                                         body: body,
@@ -97,12 +97,15 @@ struct PowerShellApp: App {
                     default:
                         let targetSessionId = sessionManager.sessionForClaudeSession(claudeSessionId)
                             ?? sessionManager.activeSessionId
+                        let sessionName = targetSessionId.flatMap { id in
+                            sessionManager.sessions.first(where: { $0.id == id })?.name
+                        } ?? "终端"
                         NotificationManager.shared.send(
-                            title: event.displayTitle,
+                            title: "PowerShell [\(sessionName)]",
                             body: event.displayMessage,
                             sessionId: targetSessionId?.uuidString ?? ""
                         )
-                        if let id = targetSessionId {
+                        if let id = targetSessionId, id != sessionManager.activeSessionId {
                             sessionManager.incrementUnread(sessionId: id)
                         }
                     }

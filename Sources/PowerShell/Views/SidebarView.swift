@@ -95,7 +95,7 @@ struct SidebarItemRow: View {
             }
 
             Spacer()
-            if unreadCount > 0 {
+            if unreadCount > 0 && !isSelected {
                 Text(unreadCount > 9 ? "9+" : "\(unreadCount)")
                     .font(.caption2)
                     .foregroundStyle(.white)
