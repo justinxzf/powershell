@@ -1,12 +1,48 @@
 import SwiftUI
 import SwiftTerm
 
-enum WindowChromeConfiguration {
-    static let navigationTitle: String? = nil
-    static let toolbarTitle = "PowerShell"
+struct WindowChromeConfiguration {
+    let navigationTitle: String?
+    let toolbarTitle: String
+    let titlePlacement: ToolbarItemPlacement
 
     @MainActor
-    static let titlePlacement: ToolbarItemPlacement = .principal
+    static let app = WindowChromeConfiguration(
+        navigationTitle: nil,
+        toolbarTitle: "PowerShell",
+        titlePlacement: .principal
+    )
+}
+
+@MainActor
+protocol FullScreenToolbarPersisting: AnyObject {
+    func apply(to window: NSWindow)
+}
+
+@MainActor
+final class FullScreenToolbarConfigurator: NSObject, FullScreenToolbarPersisting, NSWindowDelegate {
+    private weak var window: NSWindow?
+
+    func apply(to window: NSWindow) {
+        guard self.window !== window else {
+            applyFullScreenToolbarPersistence(to: window)
+            return
+        }
+        self.window?.delegate = nil
+        self.window = window
+        window.delegate = self
+        applyFullScreenToolbarPersistence(to: window)
+    }
+
+    func windowWillEnterFullScreen(_ notification: Notification) {
+        guard let window else { return }
+        applyFullScreenToolbarPersistence(to: window)
+    }
+
+    private func applyFullScreenToolbarPersistence(to window: NSWindow) {
+        window.toolbar?.showsBaselineSeparator = false
+        window.toolbarStyle = .unified
+    }
 }
 
 @main
@@ -25,110 +61,12 @@ struct PowerShellApp: App {
 
     var body: some Scene {
         WindowGroup {
-            NavigationSplitView {
-                SidebarView(sessionManager: sessionManager)
-            } detail: {
-                ZStack {
-                    ForEach(sessionManager.sessions) { session in
-                        TerminalDetailView(
-                            session: session,
-                            nlViewModel: nlViewModel,
-                            themeManager: themeManager,
-                            isActive: session.id == sessionManager.activeSessionId,
-                            onSessionActivityChanged: { isActive in
-                                sessionManager.setActiveActivity(sessionId: session.id, isActive: isActive)
-                            },
-                            onDirectoryChanged: { directory in
-                                sessionManager.updateDirectory(sessionId: session.id, directory: directory)
-                            },
-                            onAttentionNeeded: { type in
-                                // Only notify when this session is NOT active (user is elsewhere)
-                                guard session.id != sessionManager.activeSessionId else { return }
-
-                                switch type {
-                                case .oscNotification(let title, let msg):
-                                    let body = "[\(session.name)] \(title): \(msg)"
-                                    NotificationManager.shared.send(
-                                        title: "PowerShell",
-                                        body: body,
-                                        sessionId: session.id.uuidString
-                                    )
-                                    sessionManager.incrementUnread(sessionId: session.id)
-                                }
-                            },
-                            onTerminalFocused: {
-                                sessionManager.clearUnread(sessionId: session.id)
-                            }
-                        )
-                        .opacity(session.id == sessionManager.activeSessionId ? 1 : 0)
-                        .allowsHitTesting(session.id == sessionManager.activeSessionId)
-                    }
-
-                    if sessionManager.activeSession == nil {
-                        VStack(spacing: 12) {
-                            Image(systemName: "terminal")
-                                .font(.system(size: 48))
-                                .foregroundStyle(.secondary)
-                            Text("No Active Session")
-                                .font(.title2)
-                                .foregroundStyle(.secondary)
-                            Button("Create Session") {
-                                _ = sessionManager.createSession()
-                            }
-                            .buttonStyle(.borderedProminent)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                }
-            }
-            .frame(minWidth: 800, minHeight: 500)
-            .toolbar {
-                ToolbarItem(placement: WindowChromeConfiguration.titlePlacement) {
-                    Text(WindowChromeConfiguration.toolbarTitle)
-                        .font(.headline)
-                }
-            }
-            .onChange(of: sessionManager.activeSessionId) { _, newId in
-                if let id = newId {
-                    sessionManager.clearUnread(sessionId: id)
-                }
-            }
-            .task {
-                llmService.loadSavedConfig()
-                NotificationManager.shared.requestAuthorization()
-                NotificationManager.shared.onNotificationClicked = { sessionIdString in
-                    guard let sessionId = UUID(uuidString: sessionIdString) else { return }
-                    sessionManager.switchTo(sessionId: sessionId)
-                    NSApp.activate(ignoringOtherApps: true)
-                }
-
-                // Start hook notification server for Claude Code events
-                HookNotificationServer.shared.onHookNotification = { event in
-                    let claudeSessionId = event.session_id ?? ""
-
-                    switch event.hook_event_name {
-                    case "SessionStart":
-                        sessionManager.handleClaudeSessionStart(claudeSessionId: claudeSessionId)
-                    case "SessionEnd":
-                        sessionManager.handleClaudeSessionEnd(claudeSessionId: claudeSessionId)
-                    default:
-                        let targetSessionId = sessionManager.sessionForClaudeSession(claudeSessionId)
-                            ?? sessionManager.activeSessionId
-                        let sessionName = targetSessionId.flatMap { id in
-                            sessionManager.sessions.first(where: { $0.id == id })?.name
-                        } ?? "终端"
-                        NotificationManager.shared.send(
-                            title: "PowerShell [\(sessionName)]",
-                            body: event.displayMessage,
-                            sessionId: targetSessionId?.uuidString ?? ""
-                        )
-                        if let id = targetSessionId, id != sessionManager.activeSessionId {
-                            sessionManager.incrementUnread(sessionId: id)
-                        }
-                    }
-                }
-                HookNotificationServer.shared.start()
-            }
+            RootContentView(
+                sessionManager: sessionManager,
+                nlViewModel: nlViewModel,
+                llmService: llmService,
+                themeManager: themeManager
+            )
         }
         .commands {
             CommandGroup(after: .newItem) {
@@ -144,6 +82,157 @@ struct PowerShellApp: App {
         Settings {
             SettingsView(llmService: llmService, themeManager: themeManager)
         }
+    }
+}
+
+private struct RootContentView: View {
+    @Bindable var sessionManager: SessionManager
+    @Bindable var nlViewModel: NLViewModel
+    let llmService: LLMService
+    let themeManager: ThemeManager
+    private let chrome = WindowChromeConfiguration.app
+    private let fullScreenToolbarConfigurator: FullScreenToolbarPersisting
+
+    init(
+        sessionManager: SessionManager,
+        nlViewModel: NLViewModel,
+        llmService: LLMService,
+        themeManager: ThemeManager,
+        fullScreenToolbarConfigurator: FullScreenToolbarPersisting = FullScreenToolbarConfigurator()
+    ) {
+        self.sessionManager = sessionManager
+        self.nlViewModel = nlViewModel
+        self.llmService = llmService
+        self.themeManager = themeManager
+        self.fullScreenToolbarConfigurator = fullScreenToolbarConfigurator
+    }
+
+    var body: some View {
+        NavigationSplitView {
+            SidebarView(sessionManager: sessionManager)
+        } detail: {
+            ZStack {
+                ForEach(sessionManager.sessions) { session in
+                    TerminalDetailView(
+                        session: session,
+                        nlViewModel: nlViewModel,
+                        themeManager: themeManager,
+                        isActive: session.id == sessionManager.activeSessionId,
+                        onSessionActivityChanged: { isActive in
+                            sessionManager.setActiveActivity(sessionId: session.id, isActive: isActive)
+                        },
+                        onDirectoryChanged: { directory in
+                            sessionManager.updateDirectory(sessionId: session.id, directory: directory)
+                        },
+                        onAttentionNeeded: { type in
+                            guard session.id != sessionManager.activeSessionId else { return }
+
+                            switch type {
+                            case .oscNotification(let title, let msg):
+                                let body = "[\(session.name)] \(title): \(msg)"
+                                NotificationManager.shared.send(
+                                    title: "PowerShell",
+                                    body: body,
+                                    sessionId: session.id.uuidString
+                                )
+                                sessionManager.incrementUnread(sessionId: session.id)
+                            }
+                        },
+                        onTerminalFocused: {
+                            sessionManager.clearUnread(sessionId: session.id)
+                        }
+                    )
+                    .opacity(session.id == sessionManager.activeSessionId ? 1 : 0)
+                    .allowsHitTesting(session.id == sessionManager.activeSessionId)
+                }
+
+                if sessionManager.activeSession == nil {
+                    VStack(spacing: 12) {
+                        Image(systemName: "terminal")
+                            .font(.system(size: 48))
+                            .foregroundStyle(.secondary)
+                        Text("No Active Session")
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
+                        Button("Create Session") {
+                            _ = sessionManager.createSession()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+        }
+        .frame(minWidth: 800, minHeight: 500)
+        .navigationTitle(chrome.navigationTitle ?? "")
+        .toolbar {
+            ToolbarItem(placement: chrome.titlePlacement) {
+                Text(chrome.toolbarTitle)
+            }
+        }
+        .background(
+            FullScreenToolbarPersistenceView(configurator: fullScreenToolbarConfigurator)
+                .frame(width: 0, height: 0)
+        )
+        .onChange(of: sessionManager.activeSessionId) { _, newId in
+            if let id = newId {
+                sessionManager.clearUnread(sessionId: id)
+            }
+        }
+        .task {
+            llmService.loadSavedConfig()
+            NotificationManager.shared.requestAuthorization()
+            NotificationManager.shared.onNotificationClicked = { sessionIdString in
+                guard let sessionId = UUID(uuidString: sessionIdString) else { return }
+                sessionManager.switchTo(sessionId: sessionId)
+                NSApp.activate(ignoringOtherApps: true)
+            }
+
+            HookNotificationServer.shared.onHookNotification = { event in
+                let claudeSessionId = event.session_id ?? ""
+
+                switch event.hook_event_name {
+                case "SessionStart":
+                    sessionManager.handleClaudeSessionStart(claudeSessionId: claudeSessionId)
+                case "SessionEnd":
+                    sessionManager.handleClaudeSessionEnd(claudeSessionId: claudeSessionId)
+                default:
+                    let targetSessionId = sessionManager.sessionForClaudeSession(claudeSessionId)
+                        ?? sessionManager.activeSessionId
+                    let sessionName = targetSessionId.flatMap { id in
+                        sessionManager.sessions.first(where: { $0.id == id })?.name
+                    } ?? "终端"
+                    NotificationManager.shared.send(
+                        title: "PowerShell [\(sessionName)]",
+                        body: event.displayMessage,
+                        sessionId: targetSessionId?.uuidString ?? ""
+                    )
+                    if let id = targetSessionId, id != sessionManager.activeSessionId {
+                        sessionManager.incrementUnread(sessionId: id)
+                    }
+                }
+            }
+            HookNotificationServer.shared.start()
+        }
+    }
+}
+
+private struct FullScreenToolbarPersistenceView: NSViewRepresentable {
+    let configurator: FullScreenToolbarPersisting
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        configure(from: view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        configure(from: nsView)
+    }
+
+    private func configure(from view: NSView) {
+        guard let window = view.window else { return }
+        configurator.apply(to: window)
     }
 }
 
