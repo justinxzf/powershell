@@ -10,7 +10,7 @@ struct WindowChromeConfiguration {
     static let app = WindowChromeConfiguration(
         navigationTitle: nil,
         toolbarTitle: "PowerShell",
-        titlePlacement: .principal
+        titlePlacement: .navigation
     )
 }
 
