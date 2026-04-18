@@ -1,6 +1,14 @@
 import SwiftUI
 import SwiftTerm
 
+enum WindowChromeConfiguration {
+    static let navigationTitle: String? = nil
+    static let toolbarTitle = "PowerShell"
+
+    @MainActor
+    static let titlePlacement: ToolbarItemPlacement = .principal
+}
+
 @main
 struct PowerShellApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -74,6 +82,12 @@ struct PowerShellApp: App {
                 }
             }
             .frame(minWidth: 800, minHeight: 500)
+            .toolbar {
+                ToolbarItem(placement: WindowChromeConfiguration.titlePlacement) {
+                    Text(WindowChromeConfiguration.toolbarTitle)
+                        .font(.headline)
+                }
+            }
             .onChange(of: sessionManager.activeSessionId) { _, newId in
                 if let id = newId {
                     sessionManager.clearUnread(sessionId: id)
