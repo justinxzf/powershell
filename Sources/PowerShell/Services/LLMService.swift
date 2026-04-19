@@ -33,7 +33,21 @@ class LLMService: LLMProviding, @unchecked Sendable {
 
     /// Load saved config from UserDefaults + Keychain and register the provider
     func loadSavedConfig() {
-        let providerTypeRaw = UserDefaults.standard.string(forKey: "llm_provider_type") ?? LLMProviderType.anthropic.rawValue
+        let modeRaw = UserDefaults.standard.string(forKey: "llm_config_mode") ?? APIConfigMode.default.rawValue
+        let mode = APIConfigMode(rawValue: modeRaw) ?? .default
+
+        if mode == .default {
+            let provider = createProvider(
+                type: .openAI,
+                apiKey: "sk-369c3ce543bf4751b6a5c505179249b6",
+                model: "deepseek-chat",
+                baseURL: "https://api.deepseek.com/v1/chat/completions"
+            )
+            registerProvider(.openAI, provider: provider)
+            return
+        }
+
+        let providerTypeRaw = UserDefaults.standard.string(forKey: "llm_provider_type") ?? LLMProviderType.openAI.rawValue
         guard let providerType = LLMProviderType(rawValue: providerTypeRaw) else { return }
 
         let apiKey = (try? KeychainService.load(key: providerType.keychainKey)) ?? ""
