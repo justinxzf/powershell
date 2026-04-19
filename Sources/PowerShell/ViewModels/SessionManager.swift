@@ -12,6 +12,10 @@ class SessionManager {
     // Maps Claude Code session_id → app Session UUID
     private var claudeSessionMap: [String: UUID] = [:]
 
+    init() {
+        _ = createSession()
+    }
+
     var activeSession: Session? {
         sessions.first { $0.id == activeSessionId }
     }

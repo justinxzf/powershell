@@ -44,7 +44,12 @@
       "Bash(python3 -m json.tool)",
       "Bash(git check-ignore *)",
       "Bash(git worktree *)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Read(//private/tmp/**)",
+      "Bash(rm -f PowerShell.zip)",
+      "Bash(zip -r -q PowerShell.zip PowerShell.app)",
+      "Bash(rm -f /tmp/PowerShell.dmg)",
+      "Bash(hdiutil create *)"
     ]
   }
 }
