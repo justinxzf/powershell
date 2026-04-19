@@ -275,7 +275,7 @@ struct TerminalPaneView: NSViewRepresentable {
         terminal.nativeBackgroundColor = theme.nsBackgroundColor
         terminal.nativeForegroundColor = theme.nsForegroundColor
         terminal.installColors(theme.swiftTermAnsiColors)
-        terminal.startProcess(executable: shellType.launchPath)
+        terminal.startProcess(executable: shellType.launchPath, currentDirectory: NSHomeDirectory())
 
         let hostView = TerminalHostView(terminalView: terminal)
         context.coordinator.hostView = hostView
