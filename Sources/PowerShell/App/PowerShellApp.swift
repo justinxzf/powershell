@@ -246,13 +246,28 @@ private struct FullScreenToolbarPersistenceView: NSViewRepresentable {
 
 /// Ensures the app activates properly when launched from the command line.
 /// Without this, the app runs as an .accessory and never receives keyboard events.
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let appIconProvider: AppIconProviding
+
+    override init() {
+        self.appIconProvider = AppIconProvider()
+        super.init()
+    }
+
+    init(appIconProvider: AppIconProviding) {
+        self.appIconProvider = appIconProvider
+        super.init()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        appIconProvider.applyAppIcon()
         NSApp.activate(ignoringOtherApps: true)
     }
 
     func applicationWillBecomeActive(_ notification: Notification) {
+        appIconProvider.applyAppIcon()
         NSApp.activate(ignoringOtherApps: true)
     }
 }
