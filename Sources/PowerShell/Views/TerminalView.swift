@@ -20,6 +20,10 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
     private var bufferReliable = true
     private let outputMonitor = OutputMonitor()
 
+    // IME composition state
+    private var markedText = ""
+    private var markedDisplayWidth = 0
+
     enum SuggestionAction {
         case confirm
         case cancel
@@ -35,6 +39,7 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
     // MARK: - Track text via insertText (handles IME properly)
 
     public override func insertText(_ string: Any, replacementRange: NSRange) {
+        eraseMarkedText()
         if !isSendingDirectly && !hasActiveSuggestion {
             if let str = string as? String {
                 inputBuffer += str
@@ -44,6 +49,95 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
             outputMonitor.reset()
         }
         super.insertText(string, replacementRange: replacementRange)
+    }
+
+    // MARK: - IME composition (setMarkedText / hasMarkedText / unmarkText)
+
+    public override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        let newText: String
+        if let str = string as? String {
+            newText = str
+        } else if let attrStr = string as? NSAttributedString {
+            newText = attrStr.string
+        } else {
+            newText = ""
+        }
+
+        eraseMarkedText()
+
+        if !newText.isEmpty {
+            feed(text: newText)
+            markedText = newText
+            markedDisplayWidth = displayWidth(of: newText)
+        }
+    }
+
+    public override func hasMarkedText() -> Bool {
+        return !markedText.isEmpty
+    }
+
+    public override func markedRange() -> NSRange {
+        if markedText.isEmpty {
+            return NSRange(location: NSNotFound, length: 0)
+        }
+        return NSRange(location: 0, length: markedText.count)
+    }
+
+    public override func unmarkText() {
+        eraseMarkedText()
+    }
+
+    public override func validAttributesForMarkedText() -> [NSAttributedString.Key] {
+        return [.underlineStyle, .foregroundColor, .backgroundColor]
+    }
+
+    private func eraseMarkedText() {
+        guard markedDisplayWidth > 0 else { return }
+        // Move cursor left by display width, then clear to end of line
+        feed(text: "\u{1b}[\(markedDisplayWidth)D\u{1b}[K")
+        markedText = ""
+        markedDisplayWidth = 0
+    }
+
+    private func displayWidth(of string: String) -> Int {
+        var width = 0
+        for scalar in string.unicodeScalars {
+            if isEastAsianWide(scalar) {
+                width += 2
+            } else {
+                width += 1
+            }
+        }
+        return width
+    }
+
+    private func isEastAsianWide(_ scalar: Unicode.Scalar) -> Bool {
+        let v = scalar.value
+        // CJK Unified Ideographs
+        if (0x4E00...0x9FFF).contains(v) { return true }
+        // CJK Extensions A-D
+        if (0x3400...0x4DBF).contains(v) { return true }
+        // CJK Extensions B-F
+        if (0x20000...0x2A6DF).contains(v) { return true }
+        if (0x2A700...0x2CEAF).contains(v) { return true }
+        // CJK Compatibility
+        if (0xF900...0xFAFF).contains(v) { return true }
+        if (0x2F800...0x2FA1F).contains(v) { return true }
+        // Hiragana, Katakana
+        if (0x3040...0x309F).contains(v) { return true }
+        if (0x30A0...0x30FF).contains(v) { return true }
+        // Hangul
+        if (0xAC00...0xD7AF).contains(v) { return true }
+        if (0x1100...0x11FF).contains(v) { return true }
+        // Fullwidth Forms
+        if (0xFF01...0xFF60).contains(v) { return true }
+        if (0xFFE0...0xFFE6).contains(v) { return true }
+        // CJK Symbols and Punctuation, Bopomofo, etc.
+        if (0x3000...0x33FF).contains(v) { return true }
+        if (0xFE30...0xFE6F).contains(v) { return true }
+        // CJK Radicals / Kangxi
+        if (0x2E80...0x2FDF).contains(v) { return true }
+        return false
     }
 
     // MARK: - Monitor output for attention signals
