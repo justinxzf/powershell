@@ -37,7 +37,7 @@ struct TerminalTheme: Identifiable, Equatable {
         ansiColors.map(\.swiftTermColor)
     }
 
-    static let defaultTheme = allThemes[0]
+    static let defaultTheme = solarizedLight
 
     static let allThemes: [TerminalTheme] = [
         .defaultDark, .defaultLight, .dracula, .solarizedDark,
