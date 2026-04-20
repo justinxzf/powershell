@@ -196,6 +196,7 @@ private struct RootContentView: View {
 
             HookNotificationServer.shared.onHookNotification = { event in
                 let claudeSessionId = event.session_id ?? ""
+                DebugLog.write("[HookRouter] event=\(event.hook_event_name), session_id=\(claudeSessionId), type=\(event.notification_type ?? "nil")")
 
                 switch event.hook_event_name {
                 case "SessionStart":
@@ -208,6 +209,7 @@ private struct RootContentView: View {
                     let sessionName = targetSessionId.flatMap { id in
                         sessionManager.sessions.first(where: { $0.id == id })?.name
                     } ?? "终端"
+                    DebugLog.write("[HookRouter] sending notification: targetSession=\(targetSessionId?.uuidString ?? "nil"), name=\(sessionName)")
                     NotificationManager.shared.send(
                         title: "PowerShell [\(sessionName)]",
                         body: event.displayMessage,

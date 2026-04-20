@@ -8,8 +8,14 @@ final class NotificationManager: NSObject {
 
     var onNotificationClicked: ((String) -> Void)?
 
-    private var canUseUNNotifications: Bool {
+    private var authorizationGranted = false
+
+    private var isAppBundle: Bool {
         Bundle.main.bundleURL.pathExtension == "app"
+    }
+
+    private var canUseUNNotifications: Bool {
+        isAppBundle && authorizationGranted
     }
 
     private override init() {
@@ -17,18 +23,24 @@ final class NotificationManager: NSObject {
     }
 
     func requestAuthorization() {
-        if canUseUNNotifications {
-            let center = UNUserNotificationCenter.current()
-            center.delegate = self
-            center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+        guard isAppBundle else {
+            DebugLog.write("[NotificationManager] not app bundle, using floating banner")
+            return
+        }
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        center.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, _ in
+            Task { @MainActor in
+                self?.authorizationGranted = granted
                 if !granted {
-                    print("NotificationManager: notification authorization denied")
+                    DebugLog.write("[NotificationManager] authorization denied, will use floating banner")
                 }
             }
         }
     }
 
     func send(title: String, body: String, sessionId: String) {
+        DebugLog.write("[NotificationManager] send: title=\(title), useUN=\(canUseUNNotifications)")
         if canUseUNNotifications {
             sendUNNotification(title: title, body: body, sessionId: sessionId)
         } else {
