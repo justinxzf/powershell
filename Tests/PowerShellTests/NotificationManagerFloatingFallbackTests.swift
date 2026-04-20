@@ -43,12 +43,15 @@ private final class StubUserNotificationCenter: UserNotificationCenterProviding 
 
     func requestAuthorization(
         options: UNAuthorizationOptions,
-        completionHandler: @escaping (Bool, (any Error)?) -> Void
+        completionHandler: @escaping @Sendable (Bool, (any Error)?) -> Void
     ) {
         completionHandler(false, nil)
     }
 
-    func add(_ request: UNNotificationRequest, withCompletionHandler completionHandler: (((any Error)?) -> Void)?) {
-        completionHandler?(nil)
+    func add(
+        _ request: UNNotificationRequest,
+        withCompletionHandler completionHandler: (@Sendable (any Error) -> Void)?
+    ) {
+        completionHandler?(NSError(domain: "test", code: 0))
     }
 }

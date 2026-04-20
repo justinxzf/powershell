@@ -9,14 +9,15 @@ protocol FloatingNotificationPresenting: AnyObject {
 @MainActor
 final class FloatingNotificationPanelPresenter: FloatingNotificationPresenting {
     private let center: FloatingNotificationCenter
-    private let panelController: FloatingNotificationPanelController
+    private let panelControllerFactory: () -> FloatingNotificationPanelControlling
+    private lazy var panelController = panelControllerFactory()
 
     init(
         center: FloatingNotificationCenter = FloatingNotificationCenter(),
-        panelController: FloatingNotificationPanelController = FloatingNotificationPanelController()
+        panelControllerFactory: @escaping () -> FloatingNotificationPanelControlling = { FloatingNotificationPanelController() }
     ) {
         self.center = center
-        self.panelController = panelController
+        self.panelControllerFactory = panelControllerFactory
     }
 
     func show(title: String, body: String, sessionId: String) {
@@ -71,7 +72,18 @@ final class FloatingNotificationPanelPresenter: FloatingNotificationPresenting {
 }
 
 @MainActor
-private final class FloatingNotificationPanelController {
+private protocol FloatingNotificationPanelControlling: AnyObject {
+    func render(
+        presentations: [FloatingNotificationCenter.Presentation],
+        frames: [NSRect],
+        onAction: @escaping (FloatingNotificationPanelAction) -> Void
+    )
+
+    func dismissAll()
+}
+
+@MainActor
+private final class FloatingNotificationPanelController: FloatingNotificationPanelControlling {
     private var panels: [UUID: FloatingNotificationPanel] = [:]
     private var orderedPanelIDs: [UUID] = []
 

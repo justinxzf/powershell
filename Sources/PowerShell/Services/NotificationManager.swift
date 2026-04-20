@@ -7,10 +7,13 @@ protocol UserNotificationCenterProviding: AnyObject {
 
     func requestAuthorization(
         options: UNAuthorizationOptions,
-        completionHandler: @escaping (Bool, Error?) -> Void
+        completionHandler: @escaping @Sendable (Bool, (any Error)?) -> Void
     )
 
-    func add(_ request: UNNotificationRequest, withCompletionHandler completionHandler: ((Error?) -> Void)?)
+    func add(
+        _ request: UNNotificationRequest,
+        withCompletionHandler completionHandler: (@Sendable (any Error) -> Void)?
+    )
 }
 
 extension UNUserNotificationCenter: UserNotificationCenterProviding {}
