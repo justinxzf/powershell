@@ -12,7 +12,7 @@ protocol UserNotificationCenterProviding: AnyObject {
 
     func add(
         _ request: UNNotificationRequest,
-        withCompletionHandler completionHandler: (@Sendable (any Error) -> Void)?
+        withCompletionHandler completionHandler: (@Sendable ((any Error)?) -> Void)?
     )
 }
 
@@ -25,7 +25,8 @@ final class NotificationManager: NSObject {
     var onNotificationClicked: ((String) -> Void)?
 
     private var authorizationGranted = false
-    private let notificationCenter: UserNotificationCenterProviding
+    private var notificationCenter: UserNotificationCenterProviding?
+    private let notificationCenterFactory: () -> UserNotificationCenterProviding
     private let bundleInspector: () -> Bool
     private let floatingPresenter: FloatingNotificationPresenting
 
@@ -38,14 +39,17 @@ final class NotificationManager: NSObject {
     }
 
     init(
-        notificationCenter: UserNotificationCenterProviding = UNUserNotificationCenter.current(),
+        notificationCenter: UserNotificationCenterProviding? = nil,
+        notificationCenterFactory: @escaping () -> UserNotificationCenterProviding = { UNUserNotificationCenter.current() },
         bundleInspector: @escaping () -> Bool = { Bundle.main.bundleURL.pathExtension == "app" },
         floatingPresenter: FloatingNotificationPresenting = FloatingNotificationPanelPresenter()
     ) {
         self.notificationCenter = notificationCenter
+        self.notificationCenterFactory = notificationCenterFactory
         self.bundleInspector = bundleInspector
         self.floatingPresenter = floatingPresenter
         super.init()
+        configureFloatingPresenterCallbacks()
     }
 
     func requestAuthorization() {
@@ -53,6 +57,7 @@ final class NotificationManager: NSObject {
             DebugLog.write("[NotificationManager] not app bundle, using floating presenter")
             return
         }
+        let notificationCenter = resolvedNotificationCenter()
         notificationCenter.delegate = self
         notificationCenter.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, _ in
             Task { @MainActor in
@@ -85,7 +90,27 @@ final class NotificationManager: NSObject {
             content: content,
             trigger: nil
         )
-        notificationCenter.add(request) { _ in }
+        resolvedNotificationCenter().add(request) { _ in }
+    }
+
+    private func resolvedNotificationCenter() -> UserNotificationCenterProviding {
+        if let notificationCenter {
+            return notificationCenter
+        }
+
+        let notificationCenter = notificationCenterFactory()
+        self.notificationCenter = notificationCenter
+        return notificationCenter
+    }
+
+    private func configureFloatingPresenterCallbacks() {
+        guard let floatingPresenter = floatingPresenter as? FloatingNotificationSessionOpening else {
+            return
+        }
+
+        floatingPresenter.onOpenSession = { [weak self] sessionId in
+            self?.onNotificationClicked?(sessionId)
+        }
     }
 }
 

@@ -3,151 +3,110 @@ import XCTest
 
 @MainActor
 final class FloatingNotificationCenterTests: XCTestCase {
-    func testPresentationsShowNewestTwoCardsAndOverflowSummaryWhenQueueExceedsThree() {
+    func testSameSessionAggregatesLatestContentAndFooter() {
         let center = FloatingNotificationCenter()
 
-        center.enqueue(title: "one", body: "body-1", sessionId: "s1")
-        center.enqueue(title: "two", body: "body-2", sessionId: "s2")
-        center.enqueue(title: "three", body: "body-3", sessionId: "s3")
-        center.enqueue(title: "four", body: "body-4", sessionId: "s4")
+        center.enqueue(title: "首条标题", body: "首条内容", sessionId: "session-a")
+        center.enqueue(title: "更新标题", body: "更新内容", sessionId: "session-a")
+        center.enqueue(title: "最终标题", body: "最终内容", sessionId: "session-a")
 
         XCTAssertEqual(
             center.presentations(),
             [
-                .card(title: "four", body: "body-4", sessionId: "s4", footer: nil),
-                .card(title: "three", body: "body-3", sessionId: "s3", footer: nil),
-                .summary(hiddenCount: 2)
+                .card(title: "最终标题", body: "最终内容", sessionId: "session-a", footer: "还有 2 条")
             ]
         )
     }
 
-    func testPresentationsAtExactBoundaryOfThreeShowThreeCardsWithoutSummary() {
+    func testFooterIsNilForFirstNotificationAndAppearsFromSecondOnward() {
         let center = FloatingNotificationCenter()
 
-        center.enqueue(title: "one", body: "body-1", sessionId: "s1")
-        center.enqueue(title: "two", body: "body-2", sessionId: "s2")
-        center.enqueue(title: "three", body: "body-3", sessionId: "s3")
-
+        center.enqueue(title: "首条标题", body: "首条内容", sessionId: "session-a")
         XCTAssertEqual(
             center.presentations(),
             [
-                .card(title: "three", body: "body-3", sessionId: "s3", footer: nil),
-                .card(title: "two", body: "body-2", sessionId: "s2", footer: nil),
-                .card(title: "one", body: "body-1", sessionId: "s1", footer: nil)
+                .card(title: "首条标题", body: "首条内容", sessionId: "session-a", footer: nil)
+            ]
+        )
+
+        center.enqueue(title: "第二条标题", body: "第二条内容", sessionId: "session-a")
+        XCTAssertEqual(
+            center.presentations(),
+            [
+                .card(title: "第二条标题", body: "第二条内容", sessionId: "session-a", footer: "还有 1 条")
             ]
         )
     }
 
-    func testDismissingVisibleCardPromotesNextHiddenNotification() {
+    func testUpdatingExistingSessionMovesItToTop() {
         let center = FloatingNotificationCenter()
 
-        let first = center.enqueue(title: "one", body: "body-1", sessionId: "s1")
-        _ = center.enqueue(title: "two", body: "body-2", sessionId: "s2")
-        _ = center.enqueue(title: "three", body: "body-3", sessionId: "s3")
-        _ = center.enqueue(title: "four", body: "body-4", sessionId: "s4")
-
-        center.dismiss(id: first)
+        center.enqueue(title: "A1", body: "body", sessionId: "session-a")
+        center.enqueue(title: "B1", body: "body", sessionId: "session-b")
+        center.enqueue(title: "A2", body: "body", sessionId: "session-a")
 
         XCTAssertEqual(
             center.presentations(),
             [
-                .card(title: "four", body: "body-4", sessionId: "s4", footer: nil),
-                .card(title: "three", body: "body-3", sessionId: "s3", footer: nil),
-                .card(title: "two", body: "body-2", sessionId: "s2", footer: nil)
+                .card(title: "A2", body: "body", sessionId: "session-a", footer: "还有 1 条"),
+                .card(title: "B1", body: "body", sessionId: "session-b", footer: nil)
             ]
         )
     }
 
-    func testAdvanceOverflowIsNoOpWhenThereIsNoHiddenOverflow() {
+    func testDismissSessionRemovesWholeCard() {
         let center = FloatingNotificationCenter()
 
-        center.enqueue(title: "one", body: "body-1", sessionId: "s1")
-        center.enqueue(title: "two", body: "body-2", sessionId: "s2")
-        center.enqueue(title: "three", body: "body-3", sessionId: "s3")
+        center.enqueue(title: "A1", body: "body", sessionId: "session-a")
+        center.enqueue(title: "A2", body: "body", sessionId: "session-a")
+        center.enqueue(title: "B1", body: "body", sessionId: "session-b")
 
-        let before = center.presentations()
-        center.advanceOverflow()
-
-        XCTAssertEqual(center.presentations(), before)
-    }
-
-    func testAdvancingOverflowCyclesThroughHiddenNotificationsOneAtATime() {
-        let center = FloatingNotificationCenter()
-
-        center.enqueue(title: "one", body: "body-1", sessionId: "s1")
-        center.enqueue(title: "two", body: "body-2", sessionId: "s2")
-        center.enqueue(title: "three", body: "body-3", sessionId: "s3")
-        center.enqueue(title: "four", body: "body-4", sessionId: "s4")
-        center.enqueue(title: "five", body: "body-5", sessionId: "s5")
+        center.dismiss(sessionId: "session-a")
 
         XCTAssertEqual(
             center.presentations(),
             [
-                .card(title: "five", body: "body-5", sessionId: "s5", footer: nil),
-                .card(title: "four", body: "body-4", sessionId: "s4", footer: nil),
-                .summary(hiddenCount: 3)
-            ]
-        )
-
-        center.advanceOverflow()
-        XCTAssertEqual(
-            center.presentations(),
-            [
-                .card(title: "five", body: "body-5", sessionId: "s5", footer: nil),
-                .card(title: "four", body: "body-4", sessionId: "s4", footer: nil),
-                .card(title: "three", body: "body-3", sessionId: "s3", footer: "还有 2 条")
-            ]
-        )
-
-        center.advanceOverflow()
-        XCTAssertEqual(
-            center.presentations(),
-            [
-                .card(title: "five", body: "body-5", sessionId: "s5", footer: nil),
-                .card(title: "four", body: "body-4", sessionId: "s4", footer: nil),
-                .card(title: "two", body: "body-2", sessionId: "s2", footer: "还有 2 条")
-            ]
-        )
-
-        center.advanceOverflow()
-        XCTAssertEqual(
-            center.presentations(),
-            [
-                .card(title: "five", body: "body-5", sessionId: "s5", footer: nil),
-                .card(title: "four", body: "body-4", sessionId: "s4", footer: nil),
-                .card(title: "one", body: "body-1", sessionId: "s1", footer: "还有 2 条")
-            ]
-        )
-
-        center.advanceOverflow()
-        XCTAssertEqual(
-            center.presentations(),
-            [
-                .card(title: "five", body: "body-5", sessionId: "s5", footer: nil),
-                .card(title: "four", body: "body-4", sessionId: "s4", footer: nil),
-                .card(title: "three", body: "body-3", sessionId: "s3", footer: "还有 2 条")
+                .card(title: "B1", body: "body", sessionId: "session-b", footer: nil)
             ]
         )
     }
 
-    func testDismissingNonVisibleNotificationDoesNotDisturbVisibleOrdering() {
+    func testDismissingThenReEnqueueingSameSessionWorks() {
         let center = FloatingNotificationCenter()
 
-        let first = center.enqueue(title: "one", body: "body-1", sessionId: "s1")
-        center.enqueue(title: "two", body: "body-2", sessionId: "s2")
-        center.enqueue(title: "three", body: "body-3", sessionId: "s3")
-        center.enqueue(title: "four", body: "body-4", sessionId: "s4")
-        center.enqueue(title: "five", body: "body-5", sessionId: "s5")
+        center.enqueue(title: "A1", body: "body", sessionId: "session-a")
+        center.enqueue(title: "A2", body: "body", sessionId: "session-a")
+        center.dismiss(sessionId: "session-a")
 
-        center.advanceOverflow()
-        center.dismiss(id: first)
+        XCTAssertTrue(center.presentations().isEmpty)
+
+        center.enqueue(title: "A3", body: "fresh", sessionId: "session-a")
 
         XCTAssertEqual(
             center.presentations(),
             [
-                .card(title: "five", body: "body-5", sessionId: "s5", footer: nil),
-                .card(title: "four", body: "body-4", sessionId: "s4", footer: nil),
-                .card(title: "three", body: "body-3", sessionId: "s3", footer: "还有 1 条")
+                .card(title: "A3", body: "fresh", sessionId: "session-a", footer: nil)
+            ]
+        )
+    }
+
+    func testMultipleSessionsAppearAsCardsWithoutSummaryBehavior() {
+        let center = FloatingNotificationCenter()
+
+        center.enqueue(title: "A1", body: "body", sessionId: "session-a")
+        center.enqueue(title: "B1", body: "body", sessionId: "session-b")
+        center.enqueue(title: "C1", body: "body", sessionId: "session-c")
+        center.enqueue(title: "D1", body: "body", sessionId: "session-d")
+        center.enqueue(title: "E1", body: "body", sessionId: "session-e")
+
+        XCTAssertEqual(
+            center.presentations(),
+            [
+                .card(title: "E1", body: "body", sessionId: "session-e", footer: nil),
+                .card(title: "D1", body: "body", sessionId: "session-d", footer: nil),
+                .card(title: "C1", body: "body", sessionId: "session-c", footer: nil),
+                .card(title: "B1", body: "body", sessionId: "session-b", footer: nil),
+                .card(title: "A1", body: "body", sessionId: "session-a", footer: nil)
             ]
         )
     }

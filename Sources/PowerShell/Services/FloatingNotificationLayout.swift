@@ -3,7 +3,6 @@ import AppKit
 struct FloatingNotificationLayout {
     let cardWidth: CGFloat
     let cardHeight: CGFloat
-    let summaryHeight: CGFloat
     let topInset: CGFloat
     let rightInset: CGFloat
     let spacing: CGFloat
@@ -27,8 +26,6 @@ struct FloatingNotificationLayout {
         switch presentation {
         case .card:
             return cardHeight
-        case .summary:
-            return summaryHeight
         }
     }
 }

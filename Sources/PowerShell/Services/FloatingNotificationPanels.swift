@@ -7,33 +7,37 @@ protocol FloatingNotificationPresenting: AnyObject {
 }
 
 @MainActor
-final class FloatingNotificationPanelPresenter: FloatingNotificationPresenting {
-    private let center: FloatingNotificationCenter
-    private let panelControllerFactory: () -> FloatingNotificationPanelControlling
-    private lazy var panelController = panelControllerFactory()
+protocol FloatingNotificationSessionOpening: AnyObject {
+    var onOpenSession: ((String) -> Void)? { get set }
+}
 
-    init(
-        center: FloatingNotificationCenter = FloatingNotificationCenter(),
-        panelControllerFactory: @escaping () -> FloatingNotificationPanelControlling = { FloatingNotificationPanelController() }
-    ) {
+@MainActor
+final class FloatingNotificationPanelPresenter: FloatingNotificationPresenting, FloatingNotificationSessionOpening {
+    var onOpenSession: ((String) -> Void)?
+
+    private let center: FloatingNotificationCenter
+    private let panelController = FloatingNotificationPanelController()
+
+    init(center: FloatingNotificationCenter = FloatingNotificationCenter()) {
         self.center = center
-        self.panelControllerFactory = panelControllerFactory
     }
 
     func show(title: String, body: String, sessionId: String) {
-        _ = center.enqueue(title: title, body: body, sessionId: sessionId)
+        center.enqueue(title: title, body: body, sessionId: sessionId)
         render()
+    }
+
+    func handleTestingAction(_ action: FloatingNotificationPanelAction) {
+        handlePanelAction(action)
     }
 
     private func handlePanelAction(_ action: FloatingNotificationPanelAction) {
         switch action {
-        case .open(let id, let sessionId):
-            center.dismiss(id: id)
-            NotificationManager.shared.onNotificationClicked?(sessionId)
-        case .close(let id):
-            center.dismiss(id: id)
-        case .advanceOverflow:
-            center.advanceOverflow()
+        case .open(let sessionId):
+            center.dismiss(sessionId: sessionId)
+            onOpenSession?(sessionId)
+        case .close(let sessionId), .closeFromButton(let sessionId):
+            center.dismiss(sessionId: sessionId)
         }
 
         render()
@@ -54,7 +58,6 @@ final class FloatingNotificationPanelPresenter: FloatingNotificationPresenting {
         let layout = FloatingNotificationLayout(
             cardWidth: 300,
             cardHeight: 84,
-            summaryHeight: 56,
             topInset: 14,
             rightInset: 14,
             spacing: 10
@@ -72,18 +75,7 @@ final class FloatingNotificationPanelPresenter: FloatingNotificationPresenting {
 }
 
 @MainActor
-private protocol FloatingNotificationPanelControlling: AnyObject {
-    func render(
-        presentations: [FloatingNotificationCenter.Presentation],
-        frames: [NSRect],
-        onAction: @escaping (FloatingNotificationPanelAction) -> Void
-    )
-
-    func dismissAll()
-}
-
-@MainActor
-private final class FloatingNotificationPanelController: FloatingNotificationPanelControlling {
+private final class FloatingNotificationPanelController {
     private var panels: [UUID: FloatingNotificationPanel] = [:]
     private var orderedPanelIDs: [UUID] = []
 
@@ -127,11 +119,9 @@ private final class FloatingNotificationPanelController: FloatingNotificationPan
 
 @MainActor
 private final class FloatingNotificationPanel: NSPanel {
-    private let identifierValue: UUID
     private let rootView = FloatingNotificationPanelView(frame: .zero)
 
     init(identifier: UUID) {
-        self.identifierValue = identifier
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 300, height: 84),
             styleMask: [.nonactivatingPanel],
@@ -162,14 +152,27 @@ private final class FloatingNotificationPanel: NSPanel {
         setFrame(frame, display: false)
         rootView.frame = NSRect(origin: .zero, size: frame.size)
         rootView.autoresizingMask = [.width, .height]
-        rootView.configure(panelID: identifierValue, presentation: presentation, onAction: onAction)
+        rootView.configure(presentation: presentation, onAction: onAction)
     }
 }
 
-private enum FloatingNotificationPanelAction {
-    case open(id: UUID, sessionId: String)
-    case close(id: UUID)
-    case advanceOverflow
+enum FloatingNotificationPanelAction: Equatable {
+    case open(sessionId: String)
+    case close(sessionId: String)
+    case closeFromButton(sessionId: String)
+}
+
+struct FloatingNotificationClickResolver {
+    static func action(
+        sessionId: String,
+        clickLocation: NSPoint,
+        closeButtonFrame: NSRect
+    ) -> FloatingNotificationPanelAction? {
+        if closeButtonFrame.contains(clickLocation) {
+            return nil
+        }
+        return .open(sessionId: sessionId)
+    }
 }
 
 private final class FloatingNotificationPanelView: NSView {
@@ -177,12 +180,9 @@ private final class FloatingNotificationPanelView: NSView {
     private let titleField = NSTextField(labelWithString: "")
     private let bodyField = NSTextField(labelWithString: "")
     private let footerField = NSTextField(labelWithString: "")
-    private let summaryField = NSTextField(labelWithString: "")
     private let closeButton = NSButton(frame: .zero)
 
-    private var panelID: UUID?
     private var sessionId: String?
-    private var isSummaryCard = false
     private var onAction: ((FloatingNotificationPanelAction) -> Void)?
 
     override init(frame frameRect: NSRect) {
@@ -196,33 +196,18 @@ private final class FloatingNotificationPanelView: NSView {
     }
 
     func configure(
-        panelID: UUID,
         presentation: FloatingNotificationCenter.Presentation,
         onAction: @escaping (FloatingNotificationPanelAction) -> Void
     ) {
-        self.panelID = panelID
         self.onAction = onAction
 
         switch presentation {
         case .card(let title, let body, let sessionId, let footer):
-            isSummaryCard = false
             self.sessionId = sessionId
             titleField.stringValue = title
             bodyField.stringValue = body
-            bodyField.isHidden = false
             footerField.stringValue = footer ?? ""
             footerField.isHidden = footer == nil
-            summaryField.isHidden = true
-            closeButton.isHidden = false
-        case .summary(let hiddenCount):
-            isSummaryCard = true
-            sessionId = nil
-            titleField.stringValue = "更多通知"
-            bodyField.isHidden = true
-            footerField.isHidden = true
-            summaryField.stringValue = "还有 \(hiddenCount) 条通知，点击查看"
-            summaryField.isHidden = false
-            closeButton.isHidden = true
         }
 
         needsLayout = true
@@ -235,33 +220,28 @@ private final class FloatingNotificationPanelView: NSView {
         let closeSize: CGFloat = 16
         closeButton.frame = NSRect(x: bounds.maxX - inset - closeSize, y: bounds.maxY - inset - closeSize, width: closeSize, height: closeSize)
 
-        let textWidth = bounds.width - inset * 2 - (closeButton.isHidden ? 0 : closeSize + 8)
+        let textWidth = bounds.width - inset * 2 - closeSize - 8
         titleField.frame = NSRect(x: inset, y: bounds.height - 30, width: textWidth, height: 17)
-
-        if isSummaryCard {
-            summaryField.frame = NSRect(x: inset, y: 14, width: bounds.width - inset * 2, height: 18)
-        } else {
-            bodyField.frame = NSRect(x: inset, y: footerField.isHidden ? 14 : 28, width: bounds.width - inset * 2, height: 32)
-            footerField.frame = NSRect(x: inset, y: 12, width: bounds.width - inset * 2, height: 14)
-        }
+        bodyField.frame = NSRect(x: inset, y: footerField.isHidden ? 14 : 28, width: bounds.width - inset * 2, height: 32)
+        footerField.frame = NSRect(x: inset, y: 12, width: bounds.width - inset * 2, height: 14)
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard let panelID else { return }
-
-        if isSummaryCard {
-            onAction?(.advanceOverflow)
+        guard let sessionId else { return }
+        let location = convert(event.locationInWindow, from: nil)
+        guard let action = FloatingNotificationClickResolver.action(
+            sessionId: sessionId,
+            clickLocation: location,
+            closeButtonFrame: closeButton.frame
+        ) else {
             return
         }
-
-        if let sessionId {
-            onAction?(.open(id: panelID, sessionId: sessionId))
-        }
+        onAction?(action)
     }
 
     @objc private func closeTapped() {
-        guard let panelID else { return }
-        onAction?(.close(id: panelID))
+        guard let sessionId else { return }
+        onAction?(.closeFromButton(sessionId: sessionId))
     }
 
     private func setupViews() {
@@ -291,12 +271,6 @@ private final class FloatingNotificationPanelView: NSView {
         footerField.lineBreakMode = .byTruncatingTail
         footerField.maximumNumberOfLines = 1
         addSubview(footerField)
-
-        summaryField.font = .systemFont(ofSize: 12, weight: .medium)
-        summaryField.textColor = .white.withAlphaComponent(0.82)
-        summaryField.lineBreakMode = .byTruncatingTail
-        summaryField.maximumNumberOfLines = 1
-        addSubview(summaryField)
 
         closeButton.isBordered = false
         closeButton.bezelStyle = .inline
