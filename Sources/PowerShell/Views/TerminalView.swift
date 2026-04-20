@@ -260,11 +260,39 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
     }
 }
 
+// MARK: - FontSize
+
+enum FontSize: String, CaseIterable {
+    case small = "small"
+    case medium = "medium"
+    case large = "large"
+    case extraLarge = "extraLarge"
+
+    var displayName: String {
+        switch self {
+        case .small: return "小"
+        case .medium: return "中"
+        case .large: return "大"
+        case .extraLarge: return "特大"
+        }
+    }
+
+    var pointSize: CGFloat {
+        switch self {
+        case .small: return 11
+        case .medium: return 13
+        case .large: return 16
+        case .extraLarge: return 20
+        }
+    }
+}
+
 // MARK: - TerminalPaneView
 
 struct TerminalPaneView: NSViewRepresentable {
     let shellType: ShellType
     let theme: TerminalTheme
+    let fontSize: FontSize
     let onTitleChanged: (@Sendable (String) -> Void)?
     let onDirectoryChanged: (@Sendable (String?) -> Void)?
     let onProcessTerminated: (@Sendable (Int32?) -> Void)?
@@ -279,7 +307,7 @@ struct TerminalPaneView: NSViewRepresentable {
         let terminal = InterceptingTerminalView(frame: .zero)
         terminal.changeScrollback(50_000)
         terminal.processDelegate = context.coordinator
-        terminal.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        terminal.font = NSFont.monospacedSystemFont(ofSize: fontSize.pointSize, weight: .regular)
         terminal.nativeBackgroundColor = theme.nsBackgroundColor
         terminal.nativeForegroundColor = theme.nsForegroundColor
         terminal.installColors(theme.swiftTermAnsiColors)
@@ -301,11 +329,16 @@ struct TerminalPaneView: NSViewRepresentable {
 
     func updateNSView(_ nsView: TerminalHostView, context: Context) {
         let terminal = nsView.terminalView
-        guard context.coordinator.lastAppliedThemeId != theme.id else { return }
-        context.coordinator.lastAppliedThemeId = theme.id
-        terminal.nativeBackgroundColor = theme.nsBackgroundColor
-        terminal.nativeForegroundColor = theme.nsForegroundColor
-        terminal.installColors(theme.swiftTermAnsiColors)
+        if context.coordinator.lastAppliedThemeId != theme.id {
+            context.coordinator.lastAppliedThemeId = theme.id
+            terminal.nativeBackgroundColor = theme.nsBackgroundColor
+            terminal.nativeForegroundColor = theme.nsForegroundColor
+            terminal.installColors(theme.swiftTermAnsiColors)
+        }
+        if context.coordinator.lastAppliedFontSize != fontSize.pointSize {
+            context.coordinator.lastAppliedFontSize = fontSize.pointSize
+            terminal.font = NSFont.monospacedSystemFont(ofSize: fontSize.pointSize, weight: .regular)
+        }
     }
 
     final class Coordinator: NSObject, LocalProcessTerminalViewDelegate {
@@ -314,6 +347,7 @@ struct TerminalPaneView: NSViewRepresentable {
         private let onProcessTerminated: (@Sendable (Int32?) -> Void)?
         weak var hostView: TerminalHostView?
         var lastAppliedThemeId: String?
+        var lastAppliedFontSize: CGFloat?
 
         init(parent: TerminalPaneView) {
             self.onTitleChanged = parent.onTitleChanged

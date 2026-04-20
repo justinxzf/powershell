@@ -19,6 +19,7 @@ struct SettingsView: View {
     @AppStorage("llm_base_url") private var baseURL = ""
     @AppStorage("terminal_theme") private var selectedThemeId = TerminalTheme.defaultTheme.id
     @AppStorage("nl_command_enabled") private var nlCommandEnabled = true
+    @AppStorage("terminal_font_size") private var fontSizeRaw = FontSize.medium.rawValue
     @State private var apiKey = ""
     @State private var showAPIKey = false
     @State private var saveMessage: String?
@@ -99,6 +100,12 @@ struct SettingsView: View {
             }
 
             Section("外观") {
+                Picker("字体大小", selection: $fontSizeRaw) {
+                    ForEach(FontSize.allCases, id: \.self) { size in
+                        Text(size.displayName).tag(size.rawValue)
+                    }
+                }
+
                 Picker("主题", selection: $selectedThemeId) {
                     ForEach(TerminalTheme.allThemes) { theme in
                         Text(theme.displayName).tag(theme.id)

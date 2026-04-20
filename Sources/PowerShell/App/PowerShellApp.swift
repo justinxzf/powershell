@@ -350,6 +350,7 @@ struct TerminalDetailView: View {
                 TerminalPaneView(
                     shellType: session.shellType,
                     theme: themeManager.currentTheme,
+                    fontSize: FontSize(rawValue: UserDefaults.standard.string(forKey: "terminal_font_size") ?? "") ?? .medium,
                     onTitleChanged: { title in
                         Task { @MainActor in
                             terminalTitle = title
