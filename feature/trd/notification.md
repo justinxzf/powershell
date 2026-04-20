@@ -8,12 +8,12 @@
 |------|------|
 | **会话状态感知** | 自动检测 Claude Code 的启停，侧边栏显示紫色圆点指示器 |
 | **NL 拦截旁路** | Claude Code 运行时自动关闭自然语言→命令转换拦截，避免误判 |
-| **任务完成通知** | Claude Code 完成任务（Stop 事件）时弹出系统通知 |
-| **权限请求通知** | Claude Code 请求权限批准时弹出通知，避免长时间无响应 |
-| **空闲提示通知** | Claude Code 等待用户输入时弹出通知 |
+| **任务完成通知** | Claude Code 完成任务（Stop 事件）时弹出应用内浮动通知 |
+| **权限请求通知** | Claude Code 请求权限批准时弹出应用内浮动通知，避免长时间无响应 |
+| **空闲提示通知** | Claude Code 等待用户输入时弹出应用内浮动通知 |
 | **通知点击跳转** | 点击通知自动切换到对应终端标签页并激活窗口 |
 | **未读徽标** | 非当前标签页收到通知时，侧边栏显示红色未读计数 |
-| **双通道通知** | App Bundle 模式使用原生 macOS 通知中心；Debug 模式使用浮窗横幅 |
+| **统一应用内通知** | 所有启动方式统一使用右上角浮动通知横幅，无需区分运行环境 |
 | **端口自动发现** | 默认端口被占用时自动递增端口（9786~9796），Hook 脚本动态读取 |
 | **调试日志** | 通知链路全量日志输出到 `~/.powershell/logs/debug.log`，支持日志轮转 |
 
@@ -151,7 +151,7 @@ curl -s -X POST "http://127.0.0.1:$PORT" \
 │  │                  → session.claudeCodeActive = false           │
 │  │                                                              │
 │  └── Notification / Stop → NotificationManager.send()           │
-│                            → 原生通知 / 浮窗横幅                  │
+│                            → 浮动通知横幅                         │
 │                            → 未读徽标                            │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -170,15 +170,14 @@ Claude Code 支持两种 Hook 类型：`http`（直接 POST）和 `command`（�
 
 默认监听 9786 端口，若被占用则依次尝试 9787~9796。绑定成功后将实际端口写入 `~/.powershell/hook-port`，Hook 脚本启动时读取该文件获取端口。这解决了多实例并行（如 Debug 模式与生产版同时运行）的端口冲突问题。
 
-**3. 双通道通知降级**
+**3. 统一应用内浮动通知**
 
-```
-App Bundle + 通知授权已授予 → UNUserNotificationCenter（原生 macOS 通知横幅）
-App Bundle + 通知授权被拒绝 → FloatingNotificationBanner（右上角浮窗）
-非 App Bundle（swift run）  → FloatingNotificationBanner（右上角浮窗）
-```
+所有通知统一通过 `FloatingNotificationBanner` 在应用右上角展示：
 
-`UNUserNotificationCenter` 在非 App Bundle 环境下调用会 crash（`bundleProxyForCurrentProcess is nil`），必须在调用前检查 bundle 类型。授权被拒绝时 `add()` 静默丢弃通知，因此需要缓存授权状态并在被拒时降级到浮窗。
+- 不区分 App Bundle、Debug 或其他启动方式，行为一致
+- 避免依赖系统通知中心与系统通知授权流程
+- 通知样式、交互和跳转逻辑统一，便于维护和测试
+- 所有通知都通过应用内 UI 呈现，确保在当前产品形态下稳定可用
 
 ---
 
@@ -240,18 +239,13 @@ struct HookEvent: Codable, Sendable {
 
 `displayMessage` 优先级：`message` > `last_assistant_message`（截断 100 字符）> 默认文本。
 
-### 4.3 NotificationManager — 双通道通知
+### 4.3 NotificationManager — 统一浮动通知入口
 
 **文件**：`Sources/PowerShell/Services/NotificationManager.swift`
 
-#### 原生通知通道（UNUserNotificationCenter）
+`NotificationManager.send(title:body:sessionId:)` 是唯一通知入口，负责将 Hook 事件转换为统一的应用内浮动通知，并串联点击跳转与未读态更新所需的上下文。
 
-- 请求 `.alert` + `.sound` 授权
-- 实现 `UNUserNotificationCenterDelegate`，前台通知展示为 `.banner, .sound`
-- 通知 `userInfo` 携带 `sessionId`，点击时回调 `onNotificationClicked`
-- 必须在 App Bundle 环境下使用，且授权已通过
-
-#### 浮窗通知通道（FloatingNotificationBanner）
+#### 浮动通知（FloatingNotificationBanner）
 
 - `NSPanel` 子类，`level = .floating`，始终显示在最上层
 - 右上角滑入动画（0.25s easeOut），关闭时向上滑出淡出（0.2s）
@@ -259,17 +253,11 @@ struct HookEvent: Codable, Sendable {
 - 点击浮窗体跳转到对应终端标签页；点击 × 按钮关闭
 - 最大宽度 320pt，body 最多 3 行
 
-#### 授权状态缓存
+#### 发送职责
 
-```swift
-private var authorizationGranted = false
-
-private var canUseUNNotifications: Bool {
-    isAppBundle && authorizationGranted
-}
-```
-
-`requestAuthorization()` 在非 App Bundle 环境下直接跳过（避免 crash），授权结果缓存到 `authorizationGranted`，`send()` 据此选择通知通道。
+- 接收 `title`、`body`、`sessionId` 并创建浮动通知实例
+- 透传 `sessionId`，用于通知点击后切换到对应终端标签页
+- 统一处理展示入口，确保 Notification / Stop 等事件走同一条通知路径
 
 ### 4.4 SessionManager — 会话状态管理
 
@@ -362,7 +350,7 @@ if skipNLDetection {
 |------|------|
 | `[HookServer]` | HookNotificationServer（连接、端口、解码） |
 | `[HookRouter]` | RootContentView 中的事件路由逻辑 |
-| `[NotificationManager]` | NotificationManager（授权、通道选择） |
+| `[NotificationManager]` | NotificationManager（通知分发、点击回调透传） |
 
 ---
 
@@ -400,7 +388,7 @@ Claude Code 执行完成，触发 Stop Hook
 
 ```
 用户点击通知横幅
-  → UNUserNotificationCenterDelegate.didReceive / FloatingNotificationBanner.onClicked
+  → FloatingNotificationBanner.onClicked
   → NotificationManager.onNotificationClicked?(sessionId)
   → SessionManager.switchTo(sessionId:)
   → NSApp.activate(ignoringOtherApps: true)
@@ -415,10 +403,9 @@ Claude Code 执行完成，触发 Stop Hook
 |------|---------|---------|
 | 通知不弹出 | Hook 服务器未启动 | 检查日志中是否有 `[HookServer] listener ready` |
 | 通知不弹出 | 端口冲突 | 检查 `lsof -i :9786`，查看 `~/.powershell/hook-port` 内容 |
-| 通知不弹出 | 通知授权被拒且浮窗降级失败 | 检查日志中 `[NotificationManager]` 相关条目 |
+| 通知不弹出 | 浮动通知链路异常 | 检查日志中 `[NotificationManager]` 相关条目 |
 | 侧边栏无紫点 | SessionStart 事件未触发 | 检查 `~/.claude/settings.json` 中 hooks 配置是否正确 |
 | Hook 脚本不执行 | 脚本缺少执行权限 | `chmod +x ~/.claude/hooks/powershell-hook.sh` |
-| Crash: bundleProxyForCurrentProcess is nil | 非 App Bundle 下调用了 UNUserNotificationCenter | 已修复：`requestAuthorization()` 会先检查 bundle 类型 |
 | 多实例端口冲突 | 两个 PowerShell 实例同时运行 | 端口自动递增，Hook 脚本从端口文件读取 |
 
 ### 日志查看

@@ -187,7 +187,6 @@ private struct RootContentView: View {
         }
         .task {
             llmService.loadSavedConfig()
-            NotificationManager.shared.requestAuthorization()
             NotificationManager.shared.onNotificationClicked = { sessionIdString in
                 guard let sessionId = UUID(uuidString: sessionIdString) else { return }
                 sessionManager.switchTo(sessionId: sessionId)

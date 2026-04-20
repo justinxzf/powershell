@@ -1,17 +1,12 @@
 import AppKit
 import XCTest
-import UserNotifications
 @testable import PowerShell
 
 @MainActor
 final class NotificationManagerFloatingFallbackTests: XCTestCase {
-    func testSendUsesFloatingPresenterWhenNotRunningAsAppBundle() {
+    func testSendAlwaysUsesFloatingPresenter() {
         let presenter = RecordingFloatingNotificationPresenter()
-        let manager = NotificationManager(
-            notificationCenter: StubUserNotificationCenter(),
-            bundleInspector: { false },
-            floatingPresenter: presenter
-        )
+        let manager = NotificationManager(floatingPresenter: presenter)
 
         manager.send(title: "PowerShell", body: "body", sessionId: "session-1")
 
@@ -23,10 +18,9 @@ final class NotificationManagerFloatingFallbackTests: XCTestCase {
         )
     }
 
-    func testDefaultInitializerDoesNotTouchUserNotificationCenterBeforeAuthorizationRequest() {
+    func testDefaultInitializerSupportsFloatingOnlyNotificationManager() {
         XCTAssertNoThrow(
             _ = NotificationManager(
-                bundleInspector: { false },
                 floatingPresenter: RecordingFloatingNotificationPresenter()
             )
         )
@@ -62,11 +56,7 @@ final class NotificationManagerFloatingFallbackTests: XCTestCase {
 
     func testNotificationManagerWiresPresenterOpenCallbackToNotificationHandler() {
         let presenter = RecordingInteractiveFloatingPresenter()
-        let manager = NotificationManager(
-            notificationCenter: StubUserNotificationCenter(),
-            bundleInspector: { false },
-            floatingPresenter: presenter
-        )
+        let manager = NotificationManager(floatingPresenter: presenter)
 
         var openedSessionId: String?
         manager.onNotificationClicked = { openedSessionId = $0 }
@@ -95,6 +85,16 @@ final class NotificationManagerFloatingFallbackTests: XCTestCase {
 
         XCTAssertEqual(action, .open(sessionId: "session-1"))
     }
+
+    func testClickResolverReturnsCloseActionForCardBodyHitWhenSessionIdIsEmpty() {
+        let action = FloatingNotificationClickResolver.action(
+            sessionId: "",
+            clickLocation: NSPoint(x: 40, y: 20),
+            closeButtonFrame: NSRect(x: 0, y: 0, width: 16, height: 16)
+        )
+
+        XCTAssertEqual(action, .close(sessionId: ""))
+    }
 }
 
 @MainActor
@@ -120,23 +120,5 @@ private final class RecordingInteractiveFloatingPresenter: FloatingNotificationP
 
     func triggerOpen(sessionId: String) {
         onOpenSession?(sessionId)
-    }
-}
-
-private final class StubUserNotificationCenter: UserNotificationCenterProviding {
-    weak var delegate: UNUserNotificationCenterDelegate?
-
-    func requestAuthorization(
-        options: UNAuthorizationOptions,
-        completionHandler: @escaping @Sendable (Bool, (any Error)?) -> Void
-    ) {
-        completionHandler(false, nil)
-    }
-
-    func add(
-        _ request: UNNotificationRequest,
-        withCompletionHandler completionHandler: (@Sendable ((any Error)?) -> Void)?
-    ) {
-        completionHandler?(NSError(domain: "test", code: 0))
     }
 }

@@ -172,6 +172,9 @@ struct FloatingNotificationClickResolver {
         if closeButtonFrame.contains(clickLocation) {
             return nil
         }
+        guard !sessionId.isEmpty else {
+            return .close(sessionId: sessionId)
+        }
         return .open(sessionId: sessionId)
     }
 }
