@@ -95,6 +95,20 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Claude Code 集成") {
+                Toggle("自动配置 Hook 通知", isOn: Binding(
+                    get: { HookConfigurator.shared.isAutoConfigEnabled },
+                    set: { HookConfigurator.shared.setAutoConfigEnabled($0) }
+                ))
+                HStack(spacing: 4) {
+                    Image(systemName: "info.circle")
+                        .foregroundStyle(.secondary)
+                    Text("自动配置 Claude Code Hook，接收任务完成、权限请求等通知")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section {
                 Button("保存配置") {
                     saveConfig()
@@ -109,7 +123,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: configMode == .custom ? 480 : 320)
+        .frame(width: 450, height: configMode == .custom ? 530 : 370)
         .onAppear {
             loadConfig()
         }

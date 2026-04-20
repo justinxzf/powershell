@@ -35,14 +35,26 @@
 - macOS 14.0+
 - Claude Code CLI 已安装并登录
 
-### 步骤一：创建 Hook 脚本
+### 自动配置（推荐）
 
-将以下脚本保存为 `~/.claude/hooks/powershell-hook.sh`：
+PowerShell 启动时自动完成 Hook 配置，无需手动操作：
+
+1. **Hook 脚本**：自动创建 `~/.powershell/hooks/powershell-hook.sh` 并赋予执行权限
+2. **Claude Code Hooks**：自动在 `~/.claude/settings.json` 中合并 Hook 配置（保留已有配置）
+3. **版本管理**：脚本内容变更时自动更新（通过版本文件 `~/.powershell/hooks/.script-version`）
+
+可在 **设置 → Claude Code 集成** 中开关自动配置。关闭时自动清理所有 Hook 配置。
+
+### 手动配置（可选）
+
+如需手动配置，可按以下步骤操作：
+
+**1. 创建 Hook 脚本**（`~/.powershell/hooks/powershell-hook.sh`）：
 
 ```bash
 #!/bin/bash
-# Shared hook script for PowerShell notification server
-# Reads the actual port from ~/.powershell/hook-port
+# PowerShell notification hook
+# Auto-managed by PowerShell app - do not edit manually
 INPUT=$(cat)
 PORT=$(cat ~/.powershell/hook-port 2>/dev/null || echo "9786")
 curl -s -X POST "http://127.0.0.1:$PORT" \
@@ -50,15 +62,7 @@ curl -s -X POST "http://127.0.0.1:$PORT" \
   -d "$INPUT" > /dev/null 2>&1
 ```
 
-赋予执行权限：
-
-```bash
-chmod +x ~/.claude/hooks/powershell-hook.sh
-```
-
-### 步骤二：配置 Claude Code Hooks
-
-在 `~/.claude/settings.json` 中添加 `hooks` 配置：
+**2. 在 `~/.claude/settings.json` 中添加 `hooks` 配置**：
 
 ```json
 {
@@ -68,7 +72,7 @@ chmod +x ~/.claude/hooks/powershell-hook.sh
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/powershell-hook.sh"
+            "command": "~/.powershell/hooks/powershell-hook.sh"
           }
         ]
       }
@@ -78,7 +82,7 @@ chmod +x ~/.claude/hooks/powershell-hook.sh
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/powershell-hook.sh"
+            "command": "~/.powershell/hooks/powershell-hook.sh"
           }
         ]
       }
@@ -88,7 +92,7 @@ chmod +x ~/.claude/hooks/powershell-hook.sh
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/powershell-hook.sh"
+            "command": "~/.powershell/hooks/powershell-hook.sh"
           }
         ]
       }
@@ -98,7 +102,7 @@ chmod +x ~/.claude/hooks/powershell-hook.sh
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/powershell-hook.sh"
+            "command": "~/.powershell/hooks/powershell-hook.sh"
           }
         ]
       }
@@ -106,10 +110,6 @@ chmod +x ~/.claude/hooks/powershell-hook.sh
   }
 }
 ```
-
-### 步骤三：启动 PowerShell 应用
-
-启动应用后，Hook 服务器自动在本地监听 HTTP 请求。当 Claude Code 触发 Hook 事件时，应用会收到通知并展示。
 
 ### 验证
 
@@ -125,10 +125,15 @@ chmod +x ~/.claude/hooks/powershell-hook.sh
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
+│  PowerShell 启动时：                                             │
+│  HookConfigurator.configureIfNeeded()                           │
+│  ├── 确保 ~/.powershell/hooks/powershell-hook.sh 存在且可执行   │
+│  └── 合并 Hook 配置到 ~/.claude/settings.json                   │
+│                                                                  │
 │  Claude Code CLI                                                │
 │  │ (Hook 事件触发)                                               │
 │  ▼                                                              │
-│  ~/.claude/hooks/powershell-hook.sh                             │
+│  ~/.powershell/hooks/powershell-hook.sh                          │
 │  │ 1. 从 stdin 读取 JSON                                        │
 │  │ 2. 从 ~/.powershell/hook-port 读取端口                        │
 │  │ 3. curl POST → 127.0.0.1:<port>                             │
@@ -178,6 +183,23 @@ App Bundle + 通知授权被拒绝 → FloatingNotificationBanner（右上角浮
 ---
 
 ## 4. 方案详情
+
+### 4.0 HookConfigurator — Hook 自动配置
+
+**文件**：`Sources/PowerShell/Services/HookConfigurator.swift`
+
+应用启动时自动配置 Claude Code Hooks，用户无需手动操作：
+
+- **脚本管理**：自动创建 `~/.powershell/hooks/powershell-hook.sh` 并赋予执行权限，版本变更时自动更新
+- **配置合并**：安全合并 Hook 配置到 `~/.claude/settings.json`，保留用户已有配置和其他工具的 Hooks
+- **幂等设计**：每次启动检查，仅在需要时写入（通过 `marker` 字符串 `"powershell-hook"` 检测已有配置）
+- **迁移支持**：自动将旧路径 `~/.claude/hooks/powershell-hook.sh` 更新为新路径 `~/.powershell/hooks/powershell-hook.sh`
+- **开关控制**：Settings UI 提供"Claude Code 集成"开关，关闭时自动清理所有 Hook 配置
+- **版本管理**：通过 `~/.powershell/hooks/.script-version` 文件追踪脚本版本
+
+```swift
+HookConfigurator.shared.configureIfNeeded()  // 在 HookNotificationServer.start() 之前调用
+```
 
 ### 4.1 HookNotificationServer — 本地 HTTP 服务
 

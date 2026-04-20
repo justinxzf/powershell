@@ -220,6 +220,7 @@ private struct RootContentView: View {
                     }
                 }
             }
+            HookConfigurator.shared.configureIfNeeded()
             HookNotificationServer.shared.start()
         }
     }
