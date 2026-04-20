@@ -472,6 +472,13 @@ struct TerminalDetailView: View {
         let shellType = session.shellType
         let cwd = currentDirectory ?? NSHomeDirectory()
 
+        nlViewModel.onLLMError = { [self] in
+            let original = nlViewModel.currentRequest?.input ?? line
+            nlViewModel.cancelSuggestion()
+            terminalRef.terminalView?.hasActiveSuggestion = false
+            terminalRef.send(original + "\n")
+        }
+
         Task {
             let context = ShellContext(
                 cwd: cwd,

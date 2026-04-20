@@ -8,6 +8,8 @@ class NLViewModel {
     var currentRequest: NLRequest?
     var isConverting = false
 
+    var onLLMError: (() -> Void)?
+
     private let llmService: LLMService
 
     init(llmService: LLMService) {
@@ -58,6 +60,7 @@ class NLViewModel {
             currentRequest?.status = .suggested
         } catch {
             currentRequest?.status = .error(error.localizedDescription)
+            onLLMError?()
         }
 
         isConverting = false

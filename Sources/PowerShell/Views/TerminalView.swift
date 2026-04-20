@@ -190,6 +190,13 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
                 return
             }
 
+            // When NL command is disabled in settings, pass through directly
+            let nlEnabled = UserDefaults.standard.object(forKey: "nl_command_enabled") as? Bool ?? true
+            if !nlEnabled {
+                super.send(source: source, data: data)
+                return
+            }
+
             // Only do NL detection if buffer is reliable (no history navigation)
             if reliable && !line.isEmpty {
                 let inputType = NLDetector.detect(line)

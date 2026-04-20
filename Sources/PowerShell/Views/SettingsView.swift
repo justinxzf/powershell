@@ -18,6 +18,7 @@ struct SettingsView: View {
     @AppStorage("llm_model") private var model = ""
     @AppStorage("llm_base_url") private var baseURL = ""
     @AppStorage("terminal_theme") private var selectedThemeId = TerminalTheme.defaultTheme.id
+    @AppStorage("nl_command_enabled") private var nlCommandEnabled = true
     @State private var apiKey = ""
     @State private var showAPIKey = false
     @State private var saveMessage: String?
@@ -82,6 +83,21 @@ struct SettingsView: View {
                 }
             }
 
+            Section("自然语言命令") {
+                Picker("支持自然语言命令", selection: $nlCommandEnabled) {
+                    Text("是").tag(true)
+                    Text("否").tag(false)
+                }
+                .pickerStyle(.radioGroup)
+                HStack(spacing: 4) {
+                    Image(systemName: "info.circle")
+                        .foregroundStyle(.secondary)
+                    Text("开启后，输入自然语言将自动转换为终端命令")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section("外观") {
                 Picker("主题", selection: $selectedThemeId) {
                     ForEach(TerminalTheme.allThemes) { theme in
@@ -123,7 +139,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: configMode == .custom ? 530 : 370)
+        .frame(width: 450, height: configMode == .custom ? 600 : 440)
         .onAppear {
             loadConfig()
         }
