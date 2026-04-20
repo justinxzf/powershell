@@ -8,6 +8,7 @@ VERSION="1.0.0"
 BUILD_NUM="1"
 DIST_DIR="${PROJECT_DIR}/dist"
 APP_BUNDLE="${DIST_DIR}/${APP_NAME}.app"
+RESOURCE_BUNDLE="${PROJECT_DIR}/.build/release/${APP_NAME}_${APP_NAME}.bundle"
 
 echo "==> Building ${APP_NAME} (Release)..."
 swift build -c release --package-path "${PROJECT_DIR}"
@@ -20,6 +21,7 @@ mkdir -p "${APP_BUNDLE}/Contents/Resources"
 cp "${PROJECT_DIR}/.build/release/${APP_NAME}" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
 
 cp "${PROJECT_DIR}/Sources/PowerShell/Resources/AppIcon.icns" "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"
+cp -R "${RESOURCE_BUNDLE}" "${APP_BUNDLE}/Contents/Resources/${APP_NAME}_${APP_NAME}.bundle"
 
 cat > "${APP_BUNDLE}/Contents/Info.plist" << 'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -60,6 +62,12 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" << 'PLIST'
 </plist>
 PLIST
 
+echo "==> Signing app bundle (ad-hoc)..."
+codesign --force --deep --sign - "${APP_BUNDLE}"
+
+echo "==> Verifying app bundle signature..."
+codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"
+
 echo "==> Creating DMG..."
 DMG_PATH="${DIST_DIR}/${APP_NAME}.dmg"
 rm -f "${DMG_PATH}"
@@ -80,6 +88,6 @@ echo ""
 echo "==> Done! DMG created: ${DMG_PATH} (${DMG_SIZE})"
 echo "    App bundle: ${APP_BUNDLE}"
 echo ""
-echo "    Note: The app is not codesigned. Recipients may need to:"
-echo "    1. Right-click the app -> Open (first launch)"
-echo "    2. Or run: xattr -cr /Applications/PowerShell.app"
+echo "    Note: The app bundle is ad-hoc signed and verified locally before DMG packaging."
+echo "    This addresses the previous unsigned-bundle integrity issue behind the damaged-app problem, but does not guarantee every cross-machine Gatekeeper outcome."
+echo "    On another Mac, first launch may still require allowing an unidentified developer app."

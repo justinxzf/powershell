@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(plutil *)",
+      "Bash(otool -l \"/Users/bytedance/power_shell/dist/PowerShell.app/Contents/MacOS/PowerShell\")",
+      "Bash(codesign *)",
+      "Bash(defaults read *)",
+      "Bash(spctl *)",
+      "Bash(sqlite3 *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git check-ignore *)"
+    ]
+  }
+}
