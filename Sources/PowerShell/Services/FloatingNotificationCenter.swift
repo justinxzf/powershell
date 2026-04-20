@@ -7,7 +7,6 @@ final class FloatingNotificationCenter {
         let title: String
         let body: String
         let sessionId: String
-        var revealedInOverflow = false
     }
 
     enum Presentation: Equatable {
@@ -16,6 +15,7 @@ final class FloatingNotificationCenter {
     }
 
     private var notifications: [Notification] = []
+    private var revealedOverflowID: UUID?
 
     @discardableResult
     func enqueue(title: String, body: String, sessionId: String) -> UUID {
@@ -30,72 +30,111 @@ final class FloatingNotificationCenter {
     }
 
     func dismiss(id: UUID) {
-        let visibleIDs = Set(notifications.reversed().prefix(2).map(\.id))
-        let removedVisibleCard = visibleIDs.contains(id)
+        let visibleIDs = Set(visibleNotifications().map(\.id))
+        let removedVisibleNotification = visibleIDs.contains(id)
+
         notifications.removeAll { $0.id == id }
 
-        guard removedVisibleCard, notifications.count >= 3 else {
-            return
+        if revealedOverflowID == id {
+            revealedOverflowID = nil
         }
 
-        let remaining = Array(notifications.reversed().dropFirst(2))
-        let hasOverflowCard = remaining.contains { $0.revealedInOverflow }
-        guard !hasOverflowCard else {
-            return
+        if removedVisibleNotification {
+            normalizeOverflowReveal(afterRemovingVisibleNotification: true)
+        } else {
+            normalizeOverflowReveal(afterRemovingVisibleNotification: false)
         }
-
-        revealNextHiddenNotification()
     }
 
     func advanceOverflow() {
-        revealNextHiddenNotification()
-    }
-
-    func presentations() -> [Presentation] {
-        let ordered = notifications.reversed()
-        let visibleCards = Array(ordered.prefix(2))
-        let overflowSource = Array(ordered.dropFirst(2))
-
-        var presentations = visibleCards.map {
-            Presentation.card(title: $0.title, body: $0.body, sessionId: $0.sessionId, footer: nil)
-        }
-
-        guard !overflowSource.isEmpty else {
-            return presentations
-        }
-
-        let overflowRevealed = overflowSource.filter(\.revealedInOverflow)
-        let hiddenCount = overflowSource.count - overflowRevealed.count
-        let shouldShowFooter = hiddenCount > 0 && notifications.count > 4
-
-        if let overflowCard = overflowRevealed.first ?? overflowSource.first, overflowSource.count == 1 || !overflowRevealed.isEmpty {
-            let footer = shouldShowFooter ? "还有 \(hiddenCount) 条" : nil
-            presentations.append(
-                .card(
-                    title: overflowCard.title,
-                    body: overflowCard.body,
-                    sessionId: overflowCard.sessionId,
-                    footer: footer
-                )
-            )
-        } else {
-            presentations.append(.summary(hiddenCount: overflowSource.count))
-        }
-
-        return presentations
-    }
-
-    private func revealNextHiddenNotification() {
-        let hiddenNotifications = hiddenNotifications()
-        guard let nextHiddenID = hiddenNotifications.first?.id,
-              let index = notifications.firstIndex(where: { $0.id == nextHiddenID }) else {
+        let hidden = hiddenOverflowNotifications()
+        guard !hidden.isEmpty else {
             return
         }
 
-        notifications[index].revealedInOverflow = true
+        if let revealedOverflowID,
+           let currentIndex = hidden.firstIndex(where: { $0.id == revealedOverflowID }) {
+            let nextIndex = hidden.index(after: currentIndex)
+            self.revealedOverflowID = nextIndex < hidden.endIndex ? hidden[nextIndex].id : hidden.first?.id
+        } else {
+            revealedOverflowID = hidden.first?.id
+        }
     }
 
-    private func hiddenNotifications() -> [Notification] {
-        Array(notifications.reversed().dropFirst(2)).filter { !$0.revealedInOverflow }
+    func presentations() -> [Presentation] {
+        let visible = visibleNotifications()
+        let hidden = hiddenOverflowNotifications()
+        let revealed = revealedOverflowNotification(in: hidden)
+
+        var result = visible.map {
+            Presentation.card(title: $0.title, body: $0.body, sessionId: $0.sessionId, footer: nil)
+        }
+
+        if hidden.isEmpty {
+            return result
+        }
+
+        if let revealed {
+            let hiddenCount = hidden.count - 1
+            let footer = hiddenCount > 0 ? "还有 \(hiddenCount) 条" : nil
+            result.append(
+                .card(
+                    title: revealed.title,
+                    body: revealed.body,
+                    sessionId: revealed.sessionId,
+                    footer: footer
+                )
+            )
+        } else if hidden.count == 1 {
+            let overflow = hidden[0]
+            result.append(
+                .card(
+                    title: overflow.title,
+                    body: overflow.body,
+                    sessionId: overflow.sessionId,
+                    footer: nil
+                )
+            )
+        } else {
+            result.append(.summary(hiddenCount: hidden.count))
+        }
+
+        return result
+    }
+
+    private func visibleNotifications() -> [Notification] {
+        Array(notifications.reversed().prefix(2))
+    }
+
+    private func hiddenOverflowNotifications() -> [Notification] {
+        Array(notifications.reversed().dropFirst(2))
+    }
+
+    private func revealedOverflowNotification(in hidden: [Notification]) -> Notification? {
+        guard let revealedOverflowID else {
+            return nil
+        }
+
+        return hidden.first(where: { $0.id == revealedOverflowID })
+    }
+
+    private func normalizeOverflowReveal(afterRemovingVisibleNotification: Bool) {
+        let hidden = hiddenOverflowNotifications()
+
+        guard hidden.count > 1 else {
+            revealedOverflowID = nil
+            return
+        }
+
+        if afterRemovingVisibleNotification {
+            revealedOverflowID = hidden.first?.id
+            return
+        }
+
+        guard let revealedOverflowID,
+              hidden.contains(where: { $0.id == revealedOverflowID }) else {
+            self.revealedOverflowID = nil
+            return
+        }
     }
 }
