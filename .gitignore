@@ -1,4 +1,5 @@
 .build/
+.dist/
 .superpowers/
 .worktrees/
 .claude/settings.local.json
