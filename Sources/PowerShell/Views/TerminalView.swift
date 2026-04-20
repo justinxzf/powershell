@@ -270,6 +270,7 @@ struct TerminalPaneView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> TerminalHostView {
         let terminal = InterceptingTerminalView(frame: .zero)
+        terminal.changeScrollback(50_000)
         terminal.processDelegate = context.coordinator
         terminal.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
         terminal.nativeBackgroundColor = theme.nsBackgroundColor
