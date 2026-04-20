@@ -60,7 +60,8 @@ final class FloatingNotificationPanelPresenter: FloatingNotificationPresenting, 
             cardHeight: 84,
             topInset: 14,
             rightInset: 14,
-            spacing: 10
+            spacing: 10,
+            footerCardHeight: 106
         )
 
         let frames = layout.frames(for: presentations, visibleFrame: screen.visibleFrame)
@@ -222,7 +223,11 @@ private final class FloatingNotificationPanelView: NSView {
 
         let textWidth = bounds.width - inset * 2 - closeSize - 8
         titleField.frame = NSRect(x: inset, y: bounds.height - 30, width: textWidth, height: 17)
-        bodyField.frame = NSRect(x: inset, y: footerField.isHidden ? 14 : 28, width: bounds.width - inset * 2, height: 32)
+        if footerField.isHidden {
+            bodyField.frame = NSRect(x: inset, y: 14, width: bounds.width - inset * 2, height: 32)
+        } else {
+            bodyField.frame = NSRect(x: inset, y: 32, width: bounds.width - inset * 2, height: 28)
+        }
         footerField.frame = NSRect(x: inset, y: 12, width: bounds.width - inset * 2, height: 14)
     }
 

@@ -6,6 +6,23 @@ struct FloatingNotificationLayout {
     let topInset: CGFloat
     let rightInset: CGFloat
     let spacing: CGFloat
+    let footerCardHeight: CGFloat
+
+    init(
+        cardWidth: CGFloat,
+        cardHeight: CGFloat,
+        topInset: CGFloat,
+        rightInset: CGFloat,
+        spacing: CGFloat,
+        footerCardHeight: CGFloat = 110
+    ) {
+        self.cardWidth = cardWidth
+        self.cardHeight = cardHeight
+        self.topInset = topInset
+        self.rightInset = rightInset
+        self.spacing = spacing
+        self.footerCardHeight = footerCardHeight
+    }
 
     func frames(
         for presentations: [FloatingNotificationCenter.Presentation],
@@ -24,8 +41,8 @@ struct FloatingNotificationLayout {
 
     private func height(for presentation: FloatingNotificationCenter.Presentation) -> CGFloat {
         switch presentation {
-        case .card:
-            return cardHeight
+        case .card(_, _, _, let footer):
+            return footer == nil ? cardHeight : footerCardHeight
         }
     }
 }
