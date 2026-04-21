@@ -103,7 +103,11 @@ class SessionManager {
     }
 
     func handleClaudeSessionEnd(claudeSessionId: String) {
-        guard let sessionId = claudeSessionMap.removeValue(forKey: claudeSessionId) else { return }
+        guard let sessionId = claudeSessionMap.removeValue(forKey: claudeSessionId) else {
+            DebugLog.write("[SessionManager] session end: no mapping found for claudeSessionId=\(claudeSessionId)")
+            return
+        }
+        DebugLog.write("[SessionManager] session end: claudeSessionId=\(claudeSessionId) -> sessionId=\(sessionId)")
         if let index = sessions.firstIndex(where: { $0.id == sessionId }) {
             sessions[index].claudeCodeActive = false
         }

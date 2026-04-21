@@ -195,7 +195,7 @@ private struct RootContentView: View {
 
             HookNotificationServer.shared.onHookNotification = { event in
                 let claudeSessionId = event.session_id ?? ""
-                DebugLog.write("[HookRouter] event=\(event.hook_event_name), session_id=\(claudeSessionId), type=\(event.notification_type ?? "nil")")
+                DebugLog.write("[HookRouter] event=\(event.hook_event_name), session_id=\(claudeSessionId), type=\(event.notification_type ?? "nil"), psid=\(event.powershell_session_id ?? "nil")")
 
                 switch event.hook_event_name {
                 case "SessionStart":

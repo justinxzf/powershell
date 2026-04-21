@@ -79,7 +79,7 @@ final class HookConfigurator {
         do {
             try ensureHookScript()
             try ensureHooksInSettings()
-            DebugLog.write("[HookConfigurator] configuration complete")
+            DebugLog.write("[HookConfigurator] configuration complete, scriptVersion=\(Self.hookScriptVersion)")
         } catch {
             DebugLog.write("[HookConfigurator] configuration failed: \(error)")
         }

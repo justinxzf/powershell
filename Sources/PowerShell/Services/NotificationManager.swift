@@ -18,7 +18,7 @@ final class NotificationManager: NSObject {
     }
 
     func send(title: String, body: String, sessionId: String) {
-        DebugLog.write("[NotificationManager] send: title=\(title), using floating presenter")
+        DebugLog.write("[NotificationManager] send: title=\(title), sessionId=\(sessionId), using floating presenter")
         floatingPresenter.show(title: title, body: body, sessionId: sessionId)
     }
 

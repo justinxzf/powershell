@@ -23,6 +23,7 @@ final class FloatingNotificationPanelPresenter: FloatingNotificationPresenting, 
     }
 
     func show(title: String, body: String, sessionId: String) {
+        DebugLog.write("[FloatingPresenter] show: title=\(title), sessionId=\(sessionId)")
         center.enqueue(title: title, body: body, sessionId: sessionId)
         render()
     }
@@ -45,6 +46,7 @@ final class FloatingNotificationPanelPresenter: FloatingNotificationPresenting, 
 
     private func render() {
         guard let screen = NSScreen.main ?? NSScreen.screens.first else {
+            DebugLog.write("[FloatingPresenter] render: no screen available, dismissing all")
             panelController.dismissAll()
             return
         }
@@ -55,6 +57,7 @@ final class FloatingNotificationPanelPresenter: FloatingNotificationPresenting, 
             return
         }
 
+        DebugLog.write("[FloatingPresenter] render: \(presentations.count) presentation(s) on screen \(screen.visibleFrame)")
         let layout = FloatingNotificationLayout(
             cardWidth: 300,
             cardHeight: 84,

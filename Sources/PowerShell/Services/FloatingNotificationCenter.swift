@@ -21,10 +21,12 @@ final class FloatingNotificationCenter {
             aggregate.title = title
             aggregate.body = body
             aggregate.additionalCount += 1
+            DebugLog.write("[FloatingCenter] enqueue update: sessionId=\(sessionId), additionalCount=\(aggregate.additionalCount)")
             sessionAggregates.insert(aggregate, at: 0)
             return
         }
 
+        DebugLog.write("[FloatingCenter] enqueue new: sessionId=\(sessionId)")
         sessionAggregates.insert(
             SessionAggregate(
                 sessionId: sessionId,

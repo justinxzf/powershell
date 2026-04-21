@@ -314,6 +314,7 @@ struct TerminalPaneView: NSViewRepresentable {
         terminal.installColors(theme.swiftTermAnsiColors)
         var env = Terminal.getEnvironmentVariables(termName: "xterm-256color")
         env.append("POWERSHELL_SESSION_ID=\(sessionId.uuidString)")
+        DebugLog.write("[TerminalPane] startProcess: sessionId=\(sessionId.uuidString), POWERSHELL_SESSION_ID injected")
         terminal.startProcess(executable: shellType.launchPath, environment: env, currentDirectory: NSHomeDirectory())
 
         let hostView = TerminalHostView(terminalView: terminal)

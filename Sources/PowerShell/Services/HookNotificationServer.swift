@@ -167,7 +167,7 @@ final class HookNotificationServer {
             }
             return
         }
-        DebugLog.write("[HookServer] decoded event: \(event.hook_event_name), session_id=\(event.session_id ?? "nil"), type=\(event.notification_type ?? "nil")")
+        DebugLog.write("[HookServer] decoded event: \(event.hook_event_name), session_id=\(event.session_id ?? "nil"), type=\(event.notification_type ?? "nil"), powershell_session_id=\(event.powershell_session_id ?? "nil")")
         Task { @MainActor in
             onHookNotification?(event)
         }
