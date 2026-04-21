@@ -35,7 +35,7 @@ final class AppIconProvider: AppIconProviding {
 
     init(
         configuration: AppIconConfiguration = .default,
-        bundle: Bundle = .module,
+        bundle: Bundle = Bundle.main,
         imageLoader: @escaping ImageLoader = { url in
             NSImage(contentsOf: url)
         },

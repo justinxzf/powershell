@@ -1,7 +1,7 @@
 .build/
-.dist/
+dist/
 .superpowers/
 .worktrees/
 .claude/settings.local.json
 .claude/worktrees/
-docs/superpowers/plans/2026-04-20-notification-banner-redesign.md
+.swiftpm

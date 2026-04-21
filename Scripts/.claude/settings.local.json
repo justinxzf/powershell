@@ -9,7 +9,9 @@
       "Bash(sqlite3 *)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git check-ignore *)"
+      "Bash(git check-ignore *)",
+      "Bash(xargs cat *)",
+      "Bash(swift build *)"
     ]
   }
 }

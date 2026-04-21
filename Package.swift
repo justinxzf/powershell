@@ -17,10 +17,8 @@ let package = Package(
             path: "Sources/PowerShell",
             exclude: [
                 "Resources/AppIcon-master.png",
-                "Resources/AppIcon.iconset"
-            ],
-            resources: [
-                .process("Resources/AppIcon.icns")
+                "Resources/AppIcon.iconset",
+                "Resources/AppIcon.icns"
             ]
         ),
         .testTarget(
