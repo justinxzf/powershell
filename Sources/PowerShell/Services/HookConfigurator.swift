@@ -6,7 +6,7 @@ final class HookConfigurator {
 
     private static let hookEvents = ["SessionStart", "SessionEnd", "Notification", "Stop"]
     private static let hookMarker = "powershell-hook"
-    private static let hookScriptVersion = 1
+    private static let hookScriptVersion = 2
     static let autoConfigEnabledKey = "powershell_hook_autoconfig_enabled"
 
     private var hookScriptURL: URL {
@@ -38,11 +38,19 @@ final class HookConfigurator {
         #!/bin/bash
         # PowerShell notification hook (v\(Self.hookScriptVersion))
         # Auto-managed by PowerShell app - do not edit manually
+        if [ -z "$POWERSHELL_SESSION_ID" ]; then
+            exit 0
+        fi
         INPUT=$(cat)
         PORT=$(cat ~/.powershell/hook-port 2>/dev/null || echo "9786")
+        if command -v python3 &>/dev/null; then
+            MODIFIED=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); d['powershell_session_id']='$POWERSHELL_SESSION_ID'; print(json.dumps(d))")
+        else
+            MODIFIED=$(echo "$INPUT" | sed "s/}$/,\\"powershell_session_id\\":\\"$POWERSHELL_SESSION_ID\\"}/")
+        fi
         curl -s -X POST "http://127.0.0.1:$PORT" \\
           -H 'Content-Type: application/json' \\
-          -d "$INPUT" > /dev/null 2>&1
+          -d "$MODIFIED" > /dev/null 2>&1
         """
     }
 

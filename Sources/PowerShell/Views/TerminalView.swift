@@ -293,6 +293,7 @@ struct TerminalPaneView: NSViewRepresentable {
     let shellType: ShellType
     let theme: TerminalTheme
     let fontSize: FontSize
+    let sessionId: UUID
     let onTitleChanged: (@Sendable (String) -> Void)?
     let onDirectoryChanged: (@Sendable (String?) -> Void)?
     let onProcessTerminated: (@Sendable (Int32?) -> Void)?
@@ -311,7 +312,9 @@ struct TerminalPaneView: NSViewRepresentable {
         terminal.nativeBackgroundColor = theme.nsBackgroundColor
         terminal.nativeForegroundColor = theme.nsForegroundColor
         terminal.installColors(theme.swiftTermAnsiColors)
-        terminal.startProcess(executable: shellType.launchPath, currentDirectory: NSHomeDirectory())
+        var env = Terminal.getEnvironmentVariables(termName: "xterm-256color")
+        env.append("POWERSHELL_SESSION_ID=\(sessionId.uuidString)")
+        terminal.startProcess(executable: shellType.launchPath, environment: env, currentDirectory: NSHomeDirectory())
 
         let hostView = TerminalHostView(terminalView: terminal)
         context.coordinator.hostView = hostView

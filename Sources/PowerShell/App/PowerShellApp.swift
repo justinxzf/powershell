@@ -199,12 +199,22 @@ private struct RootContentView: View {
 
                 switch event.hook_event_name {
                 case "SessionStart":
-                    sessionManager.handleClaudeSessionStart(claudeSessionId: claudeSessionId)
+                    sessionManager.handleClaudeSessionStart(
+                        claudeSessionId: claudeSessionId,
+                        powershellSessionId: event.powershell_session_id
+                    )
                 case "SessionEnd":
                     sessionManager.handleClaudeSessionEnd(claudeSessionId: claudeSessionId)
                 default:
-                    let targetSessionId = sessionManager.sessionForClaudeSession(claudeSessionId)
-                        ?? sessionManager.activeSessionId
+                    let targetSessionId: UUID?
+                    if let psid = event.powershell_session_id {
+                        targetSessionId = sessionManager.sessionForPowershellSession(psid)
+                            ?? sessionManager.sessionForClaudeSession(claudeSessionId)
+                            ?? sessionManager.activeSessionId
+                    } else {
+                        targetSessionId = sessionManager.sessionForClaudeSession(claudeSessionId)
+                            ?? sessionManager.activeSessionId
+                    }
                     let sessionName = targetSessionId.flatMap { id in
                         sessionManager.sessions.first(where: { $0.id == id })?.name
                     } ?? "终端"
@@ -350,6 +360,7 @@ struct TerminalDetailView: View {
                     shellType: session.shellType,
                     theme: themeManager.currentTheme,
                     fontSize: FontSize(rawValue: UserDefaults.standard.string(forKey: "terminal_font_size") ?? "") ?? .medium,
+                    sessionId: session.id,
                     onTitleChanged: { title in
                         Task { @MainActor in
                             terminalTitle = title

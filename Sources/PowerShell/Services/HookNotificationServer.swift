@@ -157,7 +157,8 @@ final class HookNotificationServer {
                     title: nil,
                     session_id: nil,
                     cwd: nil,
-                    last_assistant_message: nil
+                    last_assistant_message: nil,
+                    powershell_session_id: nil
                 )
                 DebugLog.write("[HookServer] fallback event: \(fallback.hook_event_name)")
                 Task { @MainActor in
@@ -181,6 +182,7 @@ struct HookEvent: Codable, Sendable {
     let session_id: String?
     let cwd: String?
     let last_assistant_message: String?
+    let powershell_session_id: String?
 
     var displayTitle: String {
         switch notification_type ?? hook_event_name {

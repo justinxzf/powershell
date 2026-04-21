@@ -12,6 +12,9 @@ class SessionManager {
     // Maps Claude Code session_id → app Session UUID
     private var claudeSessionMap: [String: UUID] = [:]
 
+    // Maps POWERSHELL_SESSION_ID (session UUID string) → app Session UUID
+    private var powershellSessionIndex: [String: UUID] = [:]
+
     init() {
         _ = createSession()
     }
@@ -24,6 +27,7 @@ class SessionManager {
         let sessionName = name ?? "终端 \(sessions.count + 1)"
         let session = Session(name: sessionName, shellType: shellType)
         sessions.append(session)
+        powershellSessionIndex[session.id.uuidString] = session.id
         if activeSessionId == nil {
             activeSessionId = session.id
         }
@@ -51,6 +55,7 @@ class SessionManager {
 
     func delete(sessionId: UUID) {
         sessions.removeAll { $0.id == sessionId }
+        powershellSessionIndex.removeValue(forKey: sessionId.uuidString)
         if activeSessionId == sessionId {
             activeSessionId = sessions.first?.id
         }
@@ -79,8 +84,18 @@ class SessionManager {
 
     // MARK: - Claude Code session tracking
 
-    func handleClaudeSessionStart(claudeSessionId: String) {
-        guard let sessionId = activeSessionId else { return }
+    func handleClaudeSessionStart(claudeSessionId: String, powershellSessionId: String? = nil) {
+        let targetSessionId: UUID?
+        if let psid = powershellSessionId,
+           let mapped = powershellSessionIndex[psid] {
+            targetSessionId = mapped
+            DebugLog.write("[SessionManager] session start mapped via powershell_session_id: \(psid) -> \(mapped)")
+        } else {
+            targetSessionId = activeSessionId
+            DebugLog.write("[SessionManager] session start mapped via activeSessionId (fallback)")
+        }
+
+        guard let sessionId = targetSessionId else { return }
         claudeSessionMap[claudeSessionId] = sessionId
         if let index = sessions.firstIndex(where: { $0.id == sessionId }) {
             sessions[index].claudeCodeActive = true
@@ -96,6 +111,10 @@ class SessionManager {
 
     func sessionForClaudeSession(_ claudeSessionId: String) -> UUID? {
         claudeSessionMap[claudeSessionId]
+    }
+
+    func sessionForPowershellSession(_ powershellSessionId: String) -> UUID? {
+        powershellSessionIndex[powershellSessionId]
     }
 
     func sessionForCwd(_ cwd: String) -> UUID? {
