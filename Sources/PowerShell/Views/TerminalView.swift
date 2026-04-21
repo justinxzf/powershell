@@ -191,7 +191,7 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
             }
 
             // When NL command is disabled in settings, pass through directly
-            let nlEnabled = UserDefaults.standard.object(forKey: "nl_command_enabled") as? Bool ?? true
+            let nlEnabled = UserDefaults.standard.object(forKey: "nl_command_enabled") as? Bool ?? false
             if !nlEnabled {
                 super.send(source: source, data: data)
                 return

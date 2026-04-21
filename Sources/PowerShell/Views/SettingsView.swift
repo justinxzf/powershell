@@ -18,7 +18,7 @@ struct SettingsView: View {
     @AppStorage("llm_model") private var model = ""
     @AppStorage("llm_base_url") private var baseURL = ""
     @AppStorage("terminal_theme") private var selectedThemeId = TerminalTheme.defaultTheme.id
-    @AppStorage("nl_command_enabled") private var nlCommandEnabled = true
+    @AppStorage("nl_command_enabled") private var nlCommandEnabled = false
     @AppStorage("terminal_font_size") private var fontSizeRaw = FontSize.medium.rawValue
     @State private var apiKey = ""
     @State private var showAPIKey = false
@@ -32,26 +32,28 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("API 配置模式") {
-                Picker("配置模式", selection: $configModeRaw) {
-                    ForEach(APIConfigMode.allCases, id: \.self) { mode in
-                        Text(mode.displayName).tag(mode.rawValue)
+            if nlCommandEnabled {
+                Section("API 配置模式") {
+                    Picker("配置模式", selection: $configModeRaw) {
+                        ForEach(APIConfigMode.allCases, id: \.self) { mode in
+                            Text(mode.displayName).tag(mode.rawValue)
+                        }
                     }
-                }
-                .pickerStyle(.radioGroup)
+                    .pickerStyle(.radioGroup)
 
-                if configMode == .default {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark.shield.fill")
-                            .foregroundStyle(.green)
-                        Text("使用内置 DeepSeek 配置，无需手动设置")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    if configMode == .default {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.shield.fill")
+                                .foregroundStyle(.green)
+                            Text("使用内置 DeepSeek 配置，无需手动设置")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
 
-            if configMode == .custom {
+            if nlCommandEnabled && configMode == .custom {
                 Section("LLM 提供商") {
                     Picker("提供商", selection: $providerTypeRaw) {
                         ForEach(LLMProviderType.allCases, id: \.self) { type in
@@ -146,7 +148,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: configMode == .custom ? 600 : 440)
+        .frame(width: 450, height: configMode == .custom && nlCommandEnabled ? 600 : nlCommandEnabled ? 440 : 340)
         .onAppear {
             loadConfig()
         }
