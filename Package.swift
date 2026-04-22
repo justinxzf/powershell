@@ -19,6 +19,9 @@ let package = Package(
                 "Resources/AppIcon-master.png",
                 "Resources/AppIcon.iconset",
                 "Resources/AppIcon.icns"
+            ],
+            resources: [
+                .copy("Skills")
             ]
         ),
         .testTarget(
