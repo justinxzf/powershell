@@ -102,15 +102,28 @@ class SessionManager {
         }
     }
 
-    func handleClaudeSessionEnd(claudeSessionId: String) {
-        guard let sessionId = claudeSessionMap.removeValue(forKey: claudeSessionId) else {
-            DebugLog.write("[SessionManager] session end: no mapping found for claudeSessionId=\(claudeSessionId)")
+    func handleClaudeSessionEnd(claudeSessionId: String, powershellSessionId: String? = nil) {
+        // First try mapping via claudeSessionId
+        if let sessionId = claudeSessionMap.removeValue(forKey: claudeSessionId) {
+            DebugLog.write("[SessionManager] session end: claudeSessionId=\(claudeSessionId) -> sessionId=\(sessionId)")
+            if let index = sessions.firstIndex(where: { $0.id == sessionId }) {
+                sessions[index].claudeCodeActive = false
+            }
             return
         }
-        DebugLog.write("[SessionManager] session end: claudeSessionId=\(claudeSessionId) -> sessionId=\(sessionId)")
-        if let index = sessions.firstIndex(where: { $0.id == sessionId }) {
-            sessions[index].claudeCodeActive = false
+
+        // Fallback: lookup via powershellSessionId
+        if let psid = powershellSessionId,
+           let sessionId = powershellSessionIndex[psid] {
+            DebugLog.write("[SessionManager] session end fallback via powershell_session_id: \(psid) -> sessionId=\(sessionId)")
+            claudeSessionMap = claudeSessionMap.filter { $0.value != sessionId }
+            if let index = sessions.firstIndex(where: { $0.id == sessionId }) {
+                sessions[index].claudeCodeActive = false
+            }
+            return
         }
+
+        DebugLog.write("[SessionManager] session end: no mapping found for claudeSessionId=\(claudeSessionId), powershellSessionId=\(powershellSessionId ?? "nil")")
     }
 
     func sessionForClaudeSession(_ claudeSessionId: String) -> UUID? {

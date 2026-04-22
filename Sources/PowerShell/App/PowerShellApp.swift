@@ -186,7 +186,10 @@ private struct RootContentView: View {
                         powershellSessionId: event.powershell_session_id
                     )
                 case "SessionEnd":
-                    sessionManager.handleClaudeSessionEnd(claudeSessionId: claudeSessionId)
+                    sessionManager.handleClaudeSessionEnd(
+                        claudeSessionId: claudeSessionId,
+                        powershellSessionId: event.powershell_session_id
+                    )
                 default:
                     let targetSessionId: UUID?
                     if let psid = event.powershell_session_id {
