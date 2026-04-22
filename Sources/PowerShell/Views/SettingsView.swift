@@ -1,9 +1,22 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @AppStorage("terminal_theme") private var selectedThemeId = TerminalTheme.defaultTheme.id
-    @AppStorage("terminal_font_size") private var fontSizeRaw = FontSize.medium.rawValue
+    @State private var selectedThemeId: String
+    @State private var fontSizeRaw: String
+    @State private var showSaved = false
     var themeManager: ThemeManager
+
+    init(themeManager: ThemeManager) {
+        self.themeManager = themeManager
+        _selectedThemeId = State(initialValue: UserDefaults.standard.string(forKey: "terminal_theme") ?? TerminalTheme.defaultTheme.id)
+        _fontSizeRaw = State(initialValue: UserDefaults.standard.string(forKey: "terminal_font_size") ?? FontSize.medium.rawValue)
+    }
+
+    private var hasChanges: Bool {
+        let savedTheme = UserDefaults.standard.string(forKey: "terminal_theme") ?? TerminalTheme.defaultTheme.id
+        let savedFont = UserDefaults.standard.string(forKey: "terminal_font_size") ?? FontSize.medium.rawValue
+        return selectedThemeId != savedTheme || fontSizeRaw != savedFont
+    }
 
     var body: some View {
         Form {
@@ -17,11 +30,6 @@ struct SettingsView: View {
                 Picker("主题", selection: $selectedThemeId) {
                     ForEach(TerminalTheme.allThemes) { theme in
                         Text(theme.displayName).tag(theme.id)
-                    }
-                }
-                .onChange(of: selectedThemeId) { _, newId in
-                    if let theme = TerminalTheme.allThemes.first(where: { $0.id == newId }) {
-                        themeManager.currentTheme = theme
                     }
                 }
             }
@@ -39,8 +47,39 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            Section {
+                HStack {
+                    if showSaved {
+                        Label("已保存", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .transition(.opacity)
+                    }
+                    Spacer()
+                    Button("保存") {
+                        saveSettings()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!hasChanges)
+                }
+            }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 280)
+        .frame(width: 450, height: 320)
+        .animation(.easeInOut(duration: 0.3), value: showSaved)
+    }
+
+    private func saveSettings() {
+        UserDefaults.standard.set(fontSizeRaw, forKey: "terminal_font_size")
+        UserDefaults.standard.set(selectedThemeId, forKey: "terminal_theme")
+
+        if let theme = TerminalTheme.allThemes.first(where: { $0.id == selectedThemeId }) {
+            themeManager.currentTheme = theme
+        }
+
+        showSaved = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            showSaved = false
+        }
     }
 }
