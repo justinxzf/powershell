@@ -1,53 +1,28 @@
 import SwiftUI
 import SwiftTerm
 
-/// Terminal view subclass that intercepts text input to detect natural language.
-/// Text is tracked via `insertText` override (which properly handles IME composition),
-/// while control keys (Enter, Backspace, Ctrl+U/C) are handled in `send(source:data:)`.
-/// NL input is intercepted (line cleared with Ctrl+U) and forwarded to the LLM.
-/// When history navigation (Up/Down) is used, NL detection is skipped since we
-/// can't accurately track the shell-populated history content.
+/// Terminal view subclass that handles IME composition and attention signal monitoring.
+/// All input is passed through directly to the shell — no NL interception.
 final class InterceptingTerminalView: LocalProcessTerminalView {
-    var onLineEntered: ((String) -> Void)?
-    var onSuggestionAction: ((SuggestionAction) -> Void)?
     var onAttentionNeeded: ((AttentionType) -> Void)?
     var onTerminalFocused: (() -> Void)?
-    var hasActiveSuggestion = false
-    var skipNLDetection = false
 
-    private var inputBuffer = ""
-    private var isSendingDirectly = false
-    private var bufferReliable = true
     private let outputMonitor = OutputMonitor()
 
     // IME composition state
     private var markedText = ""
     private var markedDisplayWidth = 0
 
-    enum SuggestionAction {
-        case confirm
-        case cancel
-    }
-
-    /// Send text directly to the child process, bypassing NL interception.
+    /// Send text directly to the child process.
     func sendDirect(_ txt: String) {
-        isSendingDirectly = true
         send(txt: txt)
-        isSendingDirectly = false
     }
 
-    // MARK: - Track text via insertText (handles IME properly)
+    // MARK: - Track committed text via insertText
 
     public override func insertText(_ string: Any, replacementRange: NSRange) {
         eraseMarkedText()
-        if !isSendingDirectly && !hasActiveSuggestion {
-            if let str = string as? String {
-                inputBuffer += str
-            } else if let nsStr = string as? NSString {
-                inputBuffer += nsStr as String
-            }
-            outputMonitor.reset()
-        }
+        outputMonitor.reset()
         super.insertText(string, replacementRange: replacementRange)
     }
 
@@ -66,9 +41,12 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
         eraseMarkedText()
 
         if !newText.isEmpty {
+            let width = displayWidth(of: newText)
+            // Insert blank cells at cursor so feed() doesn't overwrite characters to the right
+            feed(text: "\u{1b}[\(width)@")
             feed(text: newText)
             markedText = newText
-            markedDisplayWidth = displayWidth(of: newText)
+            markedDisplayWidth = width
         }
     }
 
@@ -91,10 +69,12 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
         return [.underlineStyle, .foregroundColor, .backgroundColor]
     }
 
+    /// Erase the current marked (pre-composition) text from the terminal display.
+    /// Uses ESC[nP (Delete Mode) to shift remaining characters left, avoiding
+    /// the ESC[K bug that would erase characters after the cursor.
     private func eraseMarkedText() {
         guard markedDisplayWidth > 0 else { return }
-        // Move cursor left by display width, then clear to end of line
-        feed(text: "\u{1b}[\(markedDisplayWidth)D\u{1b}[K")
+        feed(text: "\u{1b}[\(markedDisplayWidth)D\u{1b}[\(markedDisplayWidth)P")
         markedText = ""
         markedDisplayWidth = 0
     }
@@ -151,112 +131,6 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
         outputMonitor.onAttentionNeeded = { [weak self] type in
             self?.onAttentionNeeded?(type)
         }
-    }
-
-    // MARK: - Handle control keys in send(source:data:)
-
-    public override func send(source: TerminalView, data: ArraySlice<UInt8>) {
-        if isSendingDirectly {
-            super.send(source: source, data: data)
-            return
-        }
-
-        let bytes = Array(data)
-
-        // Up/Down arrow — history navigation makes buffer unreliable
-        if isHistoryNavigation(bytes) {
-            bufferReliable = false
-            inputBuffer = ""
-            super.send(source: source, data: data)
-            return
-        }
-
-        // Enter key (CR or LF)
-        if bytes == [13] || bytes == [10] {
-            if hasActiveSuggestion {
-                hasActiveSuggestion = false
-                onSuggestionAction?(.confirm)
-                return
-            }
-
-            let reliable = bufferReliable
-            bufferReliable = true
-            let line = inputBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
-            inputBuffer = ""
-
-            // When Claude Code is active, pass all input directly
-            if skipNLDetection {
-                super.send(source: source, data: data)
-                return
-            }
-
-            // When NL command is disabled in settings, pass through directly
-            let nlEnabled = UserDefaults.standard.object(forKey: "nl_command_enabled") as? Bool ?? false
-            if !nlEnabled {
-                super.send(source: source, data: data)
-                return
-            }
-
-            // Only do NL detection if buffer is reliable (no history navigation)
-            if reliable && !line.isEmpty {
-                let inputType = NLDetector.detect(line)
-                if inputType == .naturalLanguage {
-                    super.send(source: source, data: ArraySlice([0x15]))
-                    onLineEntered?(line)
-                    return
-                }
-            }
-
-            super.send(source: source, data: data)
-            return
-        }
-
-        // Escape key alone
-        if bytes == [0x1b] {
-            if hasActiveSuggestion {
-                hasActiveSuggestion = false
-                onSuggestionAction?(.cancel)
-                return
-            }
-            super.send(source: source, data: data)
-            return
-        }
-
-        // Any other key while suggestion is active → cancel suggestion
-        if hasActiveSuggestion {
-            hasActiveSuggestion = false
-            onSuggestionAction?(.cancel)
-        }
-
-        // Backspace — remove last character from buffer
-        if bytes == [0x7f] || bytes == [0x08] {
-            if !inputBuffer.isEmpty { inputBuffer.removeLast() }
-            super.send(source: source, data: data)
-            return
-        }
-
-        // Ctrl+U (clear line) or Ctrl+C (interrupt) — reset everything
-        if bytes == [0x15] || bytes == [0x03] {
-            inputBuffer = ""
-            bufferReliable = true
-            super.send(source: source, data: data)
-            return
-        }
-
-        // All other data (escape sequences for left/right, etc.)
-        super.send(source: source, data: data)
-    }
-
-    // MARK: - History navigation detection
-
-    private func isHistoryNavigation(_ bytes: [UInt8]) -> Bool {
-        // Up:    ESC [ A  or  ESC O A
-        // Down:  ESC [ B  or  ESC O B
-        if bytes.count == 3 && bytes[0] == 0x1b {
-            if bytes[1] == 0x5b && (bytes[2] == 0x41 || bytes[2] == 0x42) { return true }
-            if bytes[1] == 0x4f && (bytes[2] == 0x41 || bytes[2] == 0x42) { return true }
-        }
-        return false
     }
 }
 

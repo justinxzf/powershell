@@ -1,106 +1,12 @@
 import SwiftUI
 
-enum APIConfigMode: String, CaseIterable {
-    case `default` = "default"
-    case custom = "custom"
-
-    var displayName: String {
-        switch self {
-        case .default: return "默认配置"
-        case .custom: return "自定义配置"
-        }
-    }
-}
-
 struct SettingsView: View {
-    @AppStorage("llm_config_mode") private var configModeRaw = APIConfigMode.default.rawValue
-    @AppStorage("llm_provider_type") private var providerTypeRaw = LLMProviderType.openAI.rawValue
-    @AppStorage("llm_model") private var model = ""
-    @AppStorage("llm_base_url") private var baseURL = ""
     @AppStorage("terminal_theme") private var selectedThemeId = TerminalTheme.defaultTheme.id
-    @AppStorage("nl_command_enabled") private var nlCommandEnabled = false
     @AppStorage("terminal_font_size") private var fontSizeRaw = FontSize.medium.rawValue
-    @State private var apiKey = ""
-    @State private var showAPIKey = false
-    @State private var saveMessage: String?
-    var llmService: LLMService
     var themeManager: ThemeManager
-
-    private var configMode: APIConfigMode {
-        APIConfigMode(rawValue: configModeRaw) ?? .default
-    }
 
     var body: some View {
         Form {
-            if nlCommandEnabled {
-                Section("API 配置模式") {
-                    Picker("配置模式", selection: $configModeRaw) {
-                        ForEach(APIConfigMode.allCases, id: \.self) { mode in
-                            Text(mode.displayName).tag(mode.rawValue)
-                        }
-                    }
-                    .pickerStyle(.radioGroup)
-
-                    if configMode == .default {
-                        HStack(spacing: 4) {
-                            Image(systemName: "checkmark.shield.fill")
-                                .foregroundStyle(.green)
-                            Text("使用内置 DeepSeek 配置，无需手动设置")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-
-            if nlCommandEnabled && configMode == .custom {
-                Section("LLM 提供商") {
-                    Picker("提供商", selection: $providerTypeRaw) {
-                        ForEach(LLMProviderType.allCases, id: \.self) { type in
-                            Text(type.displayName).tag(type.rawValue)
-                        }
-                    }
-                    .onChange(of: providerTypeRaw) { _, _ in
-                        model = providerType.defaultModel
-                        baseURL = providerType.defaultBaseURL
-                        apiKey = (try? KeychainService.load(key: providerType.keychainKey)) ?? ""
-                    }
-                }
-
-                Section("API 配置") {
-                    HStack {
-                        if showAPIKey {
-                            TextField("API Key", text: $apiKey)
-                        } else {
-                            SecureField("API Key", text: $apiKey)
-                        }
-                        Button(showAPIKey ? "隐藏" : "显示") {
-                            showAPIKey.toggle()
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    }
-
-                    TextField("模型", text: $model)
-                    TextField("Base URL", text: $baseURL)
-                }
-            }
-
-            Section("自然语言命令") {
-                Picker("支持自然语言命令", selection: $nlCommandEnabled) {
-                    Text("是").tag(true)
-                    Text("否").tag(false)
-                }
-                .pickerStyle(.radioGroup)
-                HStack(spacing: 4) {
-                    Image(systemName: "info.circle")
-                        .foregroundStyle(.secondary)
-                    Text("开启后，输入自然语言将自动转换为终端命令")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
             Section("外观") {
                 Picker("字体大小", selection: $fontSizeRaw) {
                     ForEach(FontSize.allCases, id: \.self) { size in
@@ -133,72 +39,8 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-
-            Section {
-                Button("保存配置") {
-                    saveConfig()
-                }
-                .buttonStyle(.borderedProminent)
-
-                if let message = saveMessage {
-                    Text(message)
-                        .font(.caption)
-                        .foregroundStyle(message.hasPrefix("保存失败") ? .red : .green)
-                }
-            }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: configMode == .custom && nlCommandEnabled ? 600 : nlCommandEnabled ? 440 : 340)
-        .onAppear {
-            loadConfig()
-        }
-        .onChange(of: configModeRaw) { _, _ in
-            saveConfig()
-        }
-    }
-
-    private var providerType: LLMProviderType {
-        LLMProviderType(rawValue: providerTypeRaw) ?? .openAI
-    }
-
-    private func loadConfig() {
-        if model.isEmpty {
-            model = UserDefaults.standard.string(forKey: "llm_model") ?? providerType.defaultModel
-        }
-        if baseURL.isEmpty {
-            baseURL = UserDefaults.standard.string(forKey: "llm_base_url") ?? providerType.defaultBaseURL
-        }
-        apiKey = (try? KeychainService.load(key: providerType.keychainKey)) ?? ""
-    }
-
-    private func saveConfig() {
-        do {
-            if configMode == .default {
-                // Use built-in DeepSeek config
-                let defaultProvider = llmService.createProvider(
-                    type: .openAI,
-                    apiKey: "sk-369c3ce543bf4751b6a5c505179249b6",
-                    model: "deepseek-chat",
-                    baseURL: "https://api.deepseek.com/v1/chat/completions"
-                )
-                llmService.registerProvider(.openAI, provider: defaultProvider)
-            } else {
-                try KeychainService.save(key: providerType.keychainKey, value: apiKey)
-                let provider = llmService.createProvider(
-                    type: providerType,
-                    apiKey: apiKey,
-                    model: model,
-                    baseURL: baseURL
-                )
-                llmService.registerProvider(providerType, provider: provider)
-            }
-
-            saveMessage = "配置已保存并生效"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                saveMessage = nil
-            }
-        } catch {
-            saveMessage = "保存失败: \(error.localizedDescription)"
-        }
+        .frame(width: 450, height: 280)
     }
 }
