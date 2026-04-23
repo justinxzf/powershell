@@ -337,6 +337,35 @@ final class TerminalReference: ObservableObject {
     }
 }
 
+enum TerminalHeaderAccessory: Equatable {
+    case splitMenu
+    case splitSummary(String)
+    case none
+}
+
+struct TerminalHeaderPresentation: Equatable {
+    let title: String
+    let accessory: TerminalHeaderAccessory
+
+    init(session: Session, terminalTitle: String, splitSecondaryName: String?, isSplitSecondary: Bool) {
+        if let currentDirectory = session.currentDirectory, !currentDirectory.isEmpty {
+            self.title = currentDirectory
+        } else if !terminalTitle.isEmpty {
+            self.title = terminalTitle
+        } else {
+            self.title = session.name
+        }
+
+        if isSplitSecondary {
+            self.accessory = .none
+        } else if let splitSecondaryName, !splitSecondaryName.isEmpty {
+            self.accessory = .splitSummary(splitSecondaryName)
+        } else {
+            self.accessory = .splitMenu
+        }
+    }
+}
+
 // MARK: - Terminal Detail View
 
 struct TerminalDetailView: View {
@@ -357,71 +386,84 @@ struct TerminalDetailView: View {
     @StateObject private var terminalRef = TerminalReference()
     @State private var terminalTitle: String = ""
 
+    private var headerPresentation: TerminalHeaderPresentation {
+        TerminalHeaderPresentation(
+            session: session,
+            terminalTitle: terminalTitle,
+            splitSecondaryName: splitSecondaryName,
+            isSplitSecondary: isSplitSecondary
+        )
+    }
+
     private var availableSessionsForSplit: [Session] {
         allSessions.filter { $0.id != session.id }
     }
 
-    var body: some View {
-        VStack(spacing: 0) {
-            // 分屏副 pane 不显示标题栏
-            if !isSplitSecondary {
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(session.isActive ? Color.green : Color.gray.opacity(0.5))
-                        .frame(width: 8, height: 8)
-
-                    Text(terminalTitle.isEmpty ? session.name : terminalTitle)
-                        .font(.body)
-                        .lineLimit(1)
-
-                    Text(session.shellType.displayName)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(.quaternary, in: Capsule())
-
-                    Spacer()
-
-                    // 分屏按钮
-                    if let secName = splitSecondaryName {
-                        Text("│")
-                            .foregroundStyle(.tertiary)
-                        Text(secName)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Button {
-                            onUnsplit?()
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .help("取消分屏")
-                    } else {
-                        Menu {
-                            ForEach(availableSessionsForSplit, id: \.id) { s in
-                                Button(s.name) {
-                                    onSplitRequested?(session.id, s.id)
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "rectangle.split.1x2")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .menuStyle(.borderlessButton)
-                        .menuIndicator(.hidden)
-                        .help("分屏显示另一个终端")
+    @ViewBuilder
+    private var headerAccessory: some View {
+        switch headerPresentation.accessory {
+        case .splitSummary(let secName):
+            Text("│")
+                .foregroundStyle(.tertiary)
+            Text(secName)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button {
+                onUnsplit?()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("取消分屏")
+        case .splitMenu:
+            Menu {
+                ForEach(availableSessionsForSplit, id: \.id) { s in
+                    Button(s.name) {
+                        onSplitRequested?(session.id, s.id)
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(.bar)
-
-                Divider()
+            } label: {
+                Image(systemName: "rectangle.split.1x2")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .help("分屏显示另一个终端")
+        case .none:
+            EmptyView()
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(session.isActive ? Color.green : Color.gray.opacity(0.5))
+                    .frame(width: 8, height: 8)
+
+                Text(headerPresentation.title)
+                    .font(.body)
+                    .lineLimit(1)
+
+                Text(session.shellType.displayName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.quaternary, in: Capsule())
+
+                Spacer()
+
+                headerAccessory
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.bar)
+
+            Divider()
 
             TerminalPaneView(
                 shellType: session.shellType,
