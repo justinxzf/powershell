@@ -146,6 +146,13 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
     // MARK: - Monitor output for attention signals
 
     public override func dataReceived(slice: ArraySlice<UInt8>) {
+        // Cancel any in-progress IME composition before processing shell output.
+        // Incoming data moves the cursor, invalidating markedDisplayWidth and causing
+        // the input context to auto-commit the partial pinyin to the shell.
+        if !markedText.isEmpty {
+            eraseMarkedText()
+            inputContext?.discardMarkedText()
+        }
         super.dataReceived(slice: slice)
         outputMonitor.processOutput(slice: slice)
     }
