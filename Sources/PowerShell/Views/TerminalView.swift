@@ -49,7 +49,6 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
             return
         }
 
-        // Insert blank cells at cursor so feed() doesn't overwrite characters to the right.
         feed(text: "\u{1b}[\(width)@")
         feed(text: newText)
         markedDisplayWidth = width
@@ -63,7 +62,7 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
         if markedText.isEmpty {
             return NSRange(location: NSNotFound, length: 0)
         }
-        return NSRange(location: 0, length: markedText.count)
+        return NSRange(location: 0, length: markedText.utf16.count)
     }
 
     public override func unmarkText() {
@@ -74,9 +73,6 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
         return [.underlineStyle, .foregroundColor, .backgroundColor]
     }
 
-    /// Erase the current marked (pre-composition) text from the terminal display.
-    /// Uses ESC[nP (Delete Mode) to shift remaining characters left, avoiding
-    /// the ESC[K bug that would erase characters after the cursor.
     private func eraseMarkedText() {
         if markedDisplayWidth > 0 {
             feed(text: "\u{1b}[\(markedDisplayWidth)D\u{1b}[\(markedDisplayWidth)P")
@@ -90,10 +86,8 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
         if cursor.x + width <= terminal.cols {
             return true
         }
-
         let endRow = min(terminal.rows - 1, cursor.y + ((width - 1) / terminal.cols))
         guard cursor.y < endRow else { return false }
-
         for row in (cursor.y + 1)...endRow {
             guard let line = terminal.getLine(row: row), !line.hasAnyContent() else {
                 return false
@@ -105,40 +99,27 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
     private func displayWidth(of string: String) -> Int {
         var width = 0
         for scalar in string.unicodeScalars {
-            if isEastAsianWide(scalar) {
-                width += 2
-            } else {
-                width += 1
-            }
+            width += isEastAsianWide(scalar) ? 2 : 1
         }
         return width
     }
 
     private func isEastAsianWide(_ scalar: Unicode.Scalar) -> Bool {
         let v = scalar.value
-        // CJK Unified Ideographs
         if (0x4E00...0x9FFF).contains(v) { return true }
-        // CJK Extensions A-D
         if (0x3400...0x4DBF).contains(v) { return true }
-        // CJK Extensions B-F
         if (0x20000...0x2A6DF).contains(v) { return true }
         if (0x2A700...0x2CEAF).contains(v) { return true }
-        // CJK Compatibility
         if (0xF900...0xFAFF).contains(v) { return true }
         if (0x2F800...0x2FA1F).contains(v) { return true }
-        // Hiragana, Katakana
         if (0x3040...0x309F).contains(v) { return true }
         if (0x30A0...0x30FF).contains(v) { return true }
-        // Hangul
         if (0xAC00...0xD7AF).contains(v) { return true }
         if (0x1100...0x11FF).contains(v) { return true }
-        // Fullwidth Forms
         if (0xFF01...0xFF60).contains(v) { return true }
         if (0xFFE0...0xFFE6).contains(v) { return true }
-        // CJK Symbols and Punctuation, Bopomofo, etc.
         if (0x3000...0x33FF).contains(v) { return true }
         if (0xFE30...0xFE6F).contains(v) { return true }
-        // CJK Radicals / Kangxi
         if (0x2E80...0x2FDF).contains(v) { return true }
         return false
     }
@@ -146,15 +127,24 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
     // MARK: - Monitor output for attention signals
 
     public override func dataReceived(slice: ArraySlice<UInt8>) {
-        // Cancel any in-progress IME composition before processing shell output.
-        // Incoming data moves the cursor, invalidating markedDisplayWidth and causing
-        // the input context to auto-commit the partial pinyin to the shell.
-        if !markedText.isEmpty {
-            eraseMarkedText()
-            inputContext?.discardMarkedText()
+        // Erase inline composition BEFORE super moves the cursor (position is correct here).
+        // After processing, re-render at the new cursor position so the composition
+        // "follows" the output instead of disappearing or corrupting the display.
+        let savedText = markedDisplayWidth > 0 ? markedText : ""
+        if markedDisplayWidth > 0 {
+            feed(text: "\u{1b}[\(markedDisplayWidth)D\u{1b}[\(markedDisplayWidth)P")
+            markedDisplayWidth = 0
         }
         super.dataReceived(slice: slice)
         outputMonitor.processOutput(slice: slice)
+        if !savedText.isEmpty {
+            let width = displayWidth(of: savedText)
+            if canRenderMarkedText(width: width) {
+                feed(text: "\u{1b}[\(width)@")
+                feed(text: savedText)
+                markedDisplayWidth = width
+            }
+        }
     }
 
     func setupOutputMonitor() {
