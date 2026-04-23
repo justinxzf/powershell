@@ -425,7 +425,7 @@ struct TerminalDetailView: View {
                     }
                 }
             } label: {
-                Image(systemName: "rectangle.split.1x2")
+                Image(systemName: "rectangle.split.2x1")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
