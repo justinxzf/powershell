@@ -100,56 +100,7 @@ private struct RootContentView: View {
             SidebarView(sessionManager: sessionManager)
                 .navigationTitle("")
         } detail: {
-            ZStack {
-                ForEach(sessionManager.sessions) { session in
-                    TerminalDetailView(
-                        session: session,
-                        themeManager: themeManager,
-                        isActive: session.id == sessionManager.activeSessionId,
-                        onSessionActivityChanged: { isActive in
-                            sessionManager.setActiveActivity(sessionId: session.id, isActive: isActive)
-                        },
-                        onDirectoryChanged: { directory in
-                            sessionManager.updateDirectory(sessionId: session.id, directory: directory)
-                        },
-                        onAttentionNeeded: { type in
-                            guard session.id != sessionManager.activeSessionId else { return }
-
-                            switch type {
-                            case .oscNotification(let title, let msg):
-                                let body = "[\(session.name)] \(title): \(msg)"
-                                NotificationManager.shared.send(
-                                    title: "PowerShell",
-                                    body: body,
-                                    sessionId: session.id.uuidString
-                                )
-                                sessionManager.incrementUnread(sessionId: session.id)
-                            }
-                        },
-                        onTerminalFocused: {
-                            sessionManager.clearUnread(sessionId: session.id)
-                        }
-                    )
-                    .opacity(session.id == sessionManager.activeSessionId ? 1 : 0)
-                    .allowsHitTesting(session.id == sessionManager.activeSessionId)
-                }
-
-                if sessionManager.activeSession == nil {
-                    VStack(spacing: 12) {
-                        Image(systemName: "terminal")
-                            .font(.system(size: 48))
-                            .foregroundStyle(.secondary)
-                        Text("No Active Session")
-                            .font(.title2)
-                            .foregroundStyle(.secondary)
-                        Button("Create Session") {
-                            _ = sessionManager.createSession()
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
+            detailContent
         }
         .frame(minWidth: 800, minHeight: 500)
         .navigationTitle("")
@@ -163,11 +114,6 @@ private struct RootContentView: View {
             FullScreenToolbarPersistenceView(configurator: fullScreenToolbarConfigurator)
                 .frame(width: 0, height: 0)
         )
-        .onChange(of: sessionManager.activeSessionId) { _, newId in
-            if let id = newId {
-                sessionManager.clearUnread(sessionId: id)
-            }
-        }
         .task {
             NotificationManager.shared.onNotificationClicked = { sessionIdString in
                 guard let sessionId = UUID(uuidString: sessionIdString) else { return }
@@ -218,6 +164,105 @@ private struct RootContentView: View {
             HookNotificationServer.shared.start()
             SkillInstaller.installIfNeeded()
         }
+    }
+
+    @ViewBuilder
+    private var detailContent: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .topLeading) {
+                ForEach(sessionManager.sessions) { session in
+                    terminalPane(for: session, geoWidth: geo.size.width, geoHeight: geo.size.height)
+                }
+
+                if sessionManager.splitPair != nil {
+                    SplitDividerView(
+                        ratio: $sessionManager.splitRatio,
+                        totalWidth: geo.size.width
+                    )
+                }
+
+                if sessionManager.sessions.isEmpty {
+                    emptyStateView
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func terminalPane(for session: Session, geoWidth: CGFloat, geoHeight: CGFloat) -> some View {
+        let isPrimary = sessionManager.splitPair?.primary == session.id
+        let isSecondary = sessionManager.splitPair?.secondary == session.id
+        let isInSplit = isPrimary || isSecondary
+        let isSingleActive = sessionManager.splitPair == nil && session.id == sessionManager.activeSessionId
+
+        let paneW: CGFloat = {
+            if isPrimary { return geoWidth * sessionManager.splitRatio }
+            if isSecondary { return geoWidth * (1 - sessionManager.splitRatio) }
+            return geoWidth
+        }()
+
+        let paneX: CGFloat = isSecondary ? geoWidth * sessionManager.splitRatio : 0
+
+        let secName: String? = isPrimary
+            ? sessionManager.sessions.first(where: { $0.id == sessionManager.splitPair?.secondary })?.name
+            : nil
+
+        TerminalDetailView(
+            session: session,
+            themeManager: themeManager,
+            isActive: isSingleActive || isPrimary,
+            onSessionActivityChanged: { isActive in
+                sessionManager.setActiveActivity(sessionId: session.id, isActive: isActive)
+            },
+            onDirectoryChanged: { directory in
+                sessionManager.updateDirectory(sessionId: session.id, directory: directory)
+            },
+            onAttentionNeeded: { type in
+                guard session.id != sessionManager.activeSessionId else { return }
+                switch type {
+                case .oscNotification(let title, let msg):
+                    let body = "[\(session.name)] \(title): \(msg)"
+                    NotificationManager.shared.send(
+                        title: "PowerShell",
+                        body: body,
+                        sessionId: session.id.uuidString
+                    )
+                    sessionManager.incrementUnread(sessionId: session.id)
+                }
+            },
+            onTerminalFocused: {
+                sessionManager.clearUnread(sessionId: session.id)
+            },
+            isSplitPrimary: isPrimary,
+            isSplitSecondary: isSecondary,
+            splitSecondaryName: secName,
+            allSessions: sessionManager.sessions,
+            onSplitRequested: { primaryId, secondaryId in
+                guard sessionManager.splitPair == nil else { return }
+                sessionManager.split(primary: primaryId, secondary: secondaryId)
+            },
+            onUnsplit: { sessionManager.unsplit() }
+        )
+        .frame(width: paneW, height: geoHeight)
+        .offset(x: paneX)
+        .opacity(isSingleActive || isInSplit ? 1 : 0)
+        .allowsHitTesting(isSingleActive || isInSplit)
+    }
+
+    private var emptyStateView: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "terminal")
+                .font(.system(size: 48))
+                .foregroundStyle(.secondary)
+            Text("No Active Session")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+            Button("Create Session") {
+                _ = sessionManager.createSession()
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -302,36 +347,81 @@ struct TerminalDetailView: View {
     var onDirectoryChanged: ((String?) -> Void)?
     var onAttentionNeeded: ((AttentionType) -> Void)?
     var onTerminalFocused: (() -> Void)?
+    var isSplitPrimary: Bool = false
+    var isSplitSecondary: Bool = false
+    var splitSecondaryName: String? = nil
+    var allSessions: [Session] = []
+    var onSplitRequested: ((UUID, UUID) -> Void)? = nil
+    var onUnsplit: (() -> Void)? = nil
 
     @StateObject private var terminalRef = TerminalReference()
     @State private var terminalTitle: String = ""
 
+    private var availableSessionsForSplit: [Session] {
+        allSessions.filter { $0.id != session.id }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            // Title bar
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(session.isActive ? Color.green : Color.gray.opacity(0.5))
-                    .frame(width: 8, height: 8)
+            // 分屏副 pane 不显示标题栏
+            if !isSplitSecondary {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(session.isActive ? Color.green : Color.gray.opacity(0.5))
+                        .frame(width: 8, height: 8)
 
-                Text(terminalTitle.isEmpty ? session.name : terminalTitle)
-                    .font(.body)
-                    .lineLimit(1)
+                    Text(terminalTitle.isEmpty ? session.name : terminalTitle)
+                        .font(.body)
+                        .lineLimit(1)
 
-                Text(session.shellType.displayName)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(.quaternary, in: Capsule())
+                    Text(session.shellType.displayName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.quaternary, in: Capsule())
 
-                Spacer()
+                    Spacer()
+
+                    // 分屏按钮
+                    if let secName = splitSecondaryName {
+                        Text("│")
+                            .foregroundStyle(.tertiary)
+                        Text(secName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Button {
+                            onUnsplit?()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("取消分屏")
+                    } else {
+                        Menu {
+                            ForEach(availableSessionsForSplit, id: \.id) { s in
+                                Button(s.name) {
+                                    onSplitRequested?(session.id, s.id)
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "rectangle.split.1x2")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .help("分屏显示另一个终端")
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(.bar)
+
+                Divider()
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(.bar)
-
-            Divider()
 
             TerminalPaneView(
                 shellType: session.shellType,

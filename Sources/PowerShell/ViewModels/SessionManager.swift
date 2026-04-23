@@ -6,7 +6,17 @@ import Observation
 @Observable
 class SessionManager {
     var sessions: [Session] = []
-    var activeSessionId: UUID?
+    var activeSessionId: UUID? {
+        didSet {
+            guard let sessionId = activeSessionId, sessionId != oldValue else { return }
+            if let pair = splitPair, pair.primary != sessionId && pair.secondary != sessionId {
+                splitPair = nil
+            }
+            clearUnread(sessionId: sessionId)
+        }
+    }
+    var splitPair: (primary: UUID, secondary: UUID)?
+    var splitRatio: Double = 0.5
     var unreadCounts: [UUID: Int] = [:]
 
     // Maps Claude Code session_id → app Session UUID
@@ -37,7 +47,6 @@ class SessionManager {
     func switchTo(sessionId: UUID) {
         guard sessions.contains(where: { $0.id == sessionId }) else { return }
         activeSessionId = sessionId
-        clearUnread(sessionId: sessionId)
     }
 
     func rename(sessionId: UUID, newName: String) {
@@ -53,7 +62,20 @@ class SessionManager {
         }
     }
 
+    func split(primary: UUID, secondary: UUID) {
+        splitPair = (primary: primary, secondary: secondary)
+        splitRatio = 0.5
+    }
+
+    func unsplit() {
+        splitPair = nil
+    }
+
     func delete(sessionId: UUID) {
+        // 若被删 session 在分屏中，先取消分屏
+        if let pair = splitPair, pair.primary == sessionId || pair.secondary == sessionId {
+            unsplit()
+        }
         sessions.removeAll { $0.id == sessionId }
         powershellSessionIndex.removeValue(forKey: sessionId.uuidString)
         if activeSessionId == sessionId {
