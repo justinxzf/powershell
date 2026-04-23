@@ -1,6 +1,6 @@
 ---
 name: powershell-ai-summary
-description: 将当前 Claude Code session 的对话内容总结并保存为 Markdown 文档。当用户输入 /powershell-ai-summary 或要求保存/总结/导出当前对话时调用。
+description: 将当前 Claude Code session 的对话内容总结并保存为 Markdown 文档；当用户输入 /powershell-ai-summary 或要求保存/总结/导出当前对话时调用。若参数是 Lark 文档地址，则改为写入在线文档而非本地文件。
 ---
 
 # PowerShell AI Session Summary
@@ -39,9 +39,19 @@ description: 将当前 Claude Code session 的对话内容总结并保存为 Mar
    - 如果当前项目不在 git 仓库中，跳过此步骤，仅依赖 transcript 中的变更记录
    - 将 git diff 结果与 transcript 中解析到的变更合并，**以 git diff 为准**，transcript 中的变更描述作为补充说明
 
-6. **确认输出目录**：
+6. **判断输出目标类型**：
    - 检查 skill 调用时的 `args` 参数
-   - 如果 args 非空（如 `/powershell-ai-summary ~/Desktop`），将其作为输出目录，跳过询问
+   - 如果 args 非空且是 Lark 文档地址（如 `https://.../docx/...`、`https://.../doc/...`、`https://.../wiki/...`），进入**在线文档输出模式**：
+     - 使用 Bash 调用 `lark-cli docs +update` 写入在线文档
+     - **写入前必须先用 AskUserQuestion 询问用户**采用哪种更新方式：`append` 还是 `overwrite`
+     - 提问文案固定为：`检测到你传入的是飞书文档链接，这次总结要如何写入目标文档？`
+     - AskUserQuestion 配置固定为单选，提供两个选项：
+       - `append`：追加到文档末尾，更安全，保留原有内容
+       - `overwrite`：覆盖整篇文档内容，适合重建完整总结
+     - 如果用户未明确选择，不要自行决定写入模式
+     - 如果是 `/wiki/` 链接，不要自行假设 token 类型；先调用 `lark-cli wiki spaces get_node --params '{"token":"wiki_token"}'` 获取真实 `obj_type` 与 `obj_token`，再按返回结果继续
+     - 在线文档输出模式下，**不要生成本地 Markdown 文件**
+   - 如果 args 非空且不是 Lark 文档地址（如 `/powershell-ai-summary ~/Desktop`），将其作为本地输出目录，跳过询问
    - 如果 args 为空，使用 AskUserQuestion 询问用户：
      - 提供两个选项：「当前目录」和「桌面」，用户也可在"Other"中输入自定义路径
      - 默认使用当前工作目录（`.`）
@@ -65,15 +75,23 @@ description: 将当前 Claude Code session 的对话内容总结并保存为 Mar
    - **文件变更汇总**：以 git diff 结果为准列出所有变更文件，标注操作类型和变更说明；无 git 仓库时使用 transcript 解析结果
    - **关键命令**：列出执行的重要 shell 命令
 
-8. **保存文件**：
-   - 文件名格式：`PowerShell_会话_{核心话题关键词}_YYYYMMDD.md`
-   - 核心话题关键词从会话标题中提取（取前 2-4 个汉字/单词）
-   - 多话题时使用第一个话题的关键词，或使用"多话题"概括
-   - 如果同一天已存在同名文件，追加时分：`PowerShell_会话_{关键词}_YYYYMMDD_HHmm.md`
-   - 完整路径：`{输出目录}/PowerShell_会话_{关键词}_YYYYMMDD.md`
-   - 使用 Write 工具写入
+8. **输出结果**：
+   - **本地输出模式**：
+     - 文件名格式：`PowerShell_会话_{核心话题关键词}_YYYYMMDD.md`
+     - 核心话题关键词从会话标题中提取（取前 2-4 个汉字/单词）
+     - 多话题时使用第一个话题的关键词，或使用"多话题"概括
+     - 如果同一天已存在同名文件，追加时分：`PowerShell_会话_{关键词}_YYYYMMDD_HHmm.md`
+     - 完整路径：`{输出目录}/PowerShell_会话_{关键词}_YYYYMMDD.md`
+     - 使用 Write 工具写入
+   - **在线文档输出模式**：
+     - 将第 7 步生成的完整 Markdown 作为 `lark-cli docs +update` 的 `--markdown` 输入
+     - 更新模式由用户明确选择：`append` 或 `overwrite`
+     - 调用示例：`lark-cli docs +update --as user --doc "<lark_doc_url_or_token>" --mode <append|overwrite> --markdown "..."`
+     - 如果返回权限错误，按 `lark-shared` 规则处理：优先提示用户补授权或重新以 `--as user` 登录
 
-9. **告知用户**：用中文回复，包含文件路径和一段简短摘要
+9. **告知用户**：
+   - 本地输出模式：用中文回复，包含文件路径和一段简短摘要
+   - 在线文档输出模式：用中文回复，包含目标文档链接/标识、采用的更新模式（append 或 overwrite）和一段简短摘要
 
 ## 输出格式示例
 
