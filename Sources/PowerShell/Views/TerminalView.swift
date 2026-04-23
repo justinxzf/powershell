@@ -40,14 +40,19 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
 
         eraseMarkedText()
 
-        if !newText.isEmpty {
-            let width = displayWidth(of: newText)
-            // Insert blank cells at cursor so feed() doesn't overwrite characters to the right
-            feed(text: "\u{1b}[\(width)@")
-            feed(text: newText)
-            markedText = newText
-            markedDisplayWidth = width
+        guard !newText.isEmpty else { return }
+
+        markedText = newText
+        let width = displayWidth(of: newText)
+        guard canRenderMarkedText(width: width) else {
+            markedDisplayWidth = 0
+            return
         }
+
+        // Insert blank cells at cursor so feed() doesn't overwrite characters to the right.
+        feed(text: "\u{1b}[\(width)@")
+        feed(text: newText)
+        markedDisplayWidth = width
     }
 
     public override func hasMarkedText() -> Bool {
@@ -73,10 +78,28 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
     /// Uses ESC[nP (Delete Mode) to shift remaining characters left, avoiding
     /// the ESC[K bug that would erase characters after the cursor.
     private func eraseMarkedText() {
-        guard markedDisplayWidth > 0 else { return }
-        feed(text: "\u{1b}[\(markedDisplayWidth)D\u{1b}[\(markedDisplayWidth)P")
+        if markedDisplayWidth > 0 {
+            feed(text: "\u{1b}[\(markedDisplayWidth)D\u{1b}[\(markedDisplayWidth)P")
+        }
         markedText = ""
         markedDisplayWidth = 0
+    }
+
+    private func canRenderMarkedText(width: Int) -> Bool {
+        let cursor = terminal.getCursorLocation()
+        if cursor.x + width <= terminal.cols {
+            return true
+        }
+
+        let endRow = min(terminal.rows - 1, cursor.y + ((width - 1) / terminal.cols))
+        guard cursor.y < endRow else { return false }
+
+        for row in (cursor.y + 1)...endRow {
+            guard let line = terminal.getLine(row: row), !line.hasAnyContent() else {
+                return false
+            }
+        }
+        return true
     }
 
     private func displayWidth(of string: String) -> Int {
