@@ -31,7 +31,14 @@ struct SkillInstaller {
             DebugLog.write("[SkillInstaller] Skills directory not found in bundle")
             return
         }
+        installSkills(fromDirectory: skillsPath)
+    }
 
+    static func installIfNeeded(skillsDirectoryPath: String) {
+        installSkills(fromDirectory: skillsDirectoryPath)
+    }
+
+    private static func installSkills(fromDirectory skillsPath: String) {
         let fm = FileManager.default
         guard let skillDirs = try? fm.contentsOfDirectory(atPath: skillsPath) else {
             DebugLog.write("[SkillInstaller] Cannot read Skills directory at \(skillsPath)")
@@ -58,7 +65,6 @@ struct SkillInstaller {
             }
 
             do {
-                // Remove old installation before copying (copyItem fails if dest exists)
                 if fm.fileExists(atPath: destDir) {
                     try fm.removeItem(atPath: destDir)
                 }

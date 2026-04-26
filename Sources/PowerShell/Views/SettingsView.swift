@@ -5,9 +5,11 @@ struct SettingsView: View {
     @State private var fontSizeRaw: String
     @State private var showSaved = false
     var themeManager: ThemeManager
+    var pluginSettingsSections: [AnyView]
 
-    init(themeManager: ThemeManager) {
+    init(themeManager: ThemeManager, pluginSettingsSections: [AnyView] = []) {
         self.themeManager = themeManager
+        self.pluginSettingsSections = pluginSettingsSections
         _selectedThemeId = State(initialValue: UserDefaults.standard.string(forKey: "terminal_theme") ?? TerminalTheme.defaultTheme.id)
         _fontSizeRaw = State(initialValue: UserDefaults.standard.string(forKey: "terminal_font_size") ?? FontSize.medium.rawValue)
     }
@@ -46,6 +48,10 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+
+            ForEach(pluginSettingsSections.indices, id: \.self) { i in
+                pluginSettingsSections[i]
             }
 
             Section {

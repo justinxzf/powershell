@@ -5,43 +5,88 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Run
 
 - **Build**: `swift build`
-- **Test**: `swift test`
+- **Test**: `swift test` (or `xcodebuild test -scheme PowerShell -destination 'platform=macOS'`)
 - **Run**: `swift run PowerShell` (requires macOS GUI session)
 - **Platform**: macOS 14.0+, Swift 6.0, SPM
 - **Dependency**: SwiftTerm 1.13.0 (sole external dep)
 
 ## Architecture
 
-A macOS terminal emulator (SwiftUI + SwiftTerm) that intercepts natural language input, converts it to shell commands via cloud LLM, and presents for confirmation.
+A macOS terminal emulator (SwiftUI + SwiftTerm) serving as a Claude Code host. Provides multi-session management, split-pane layout, and floating notifications for Claude Code hook events. All keyboard input is passed through directly to the shell — no interception or LLM processing.
 
 ### Data Flow
 
 ```
-User types → InterceptingTerminalView (insertText + send override)
-  → NLDetector.detect() on Enter (local rules, no LLM)
-    → .command: pass through to shell
-    → .naturalLanguage: Ctrl+U to clear line, call LLM
-      → CommandSuggestionView overlay (confirm/edit/cancel/execute-original)
-        → Confirm → send suggested command to terminal
-        → Execute Original → send original input as-is to terminal
+User types → TerminalHostView (NSView, responder chain)
+  → InterceptingTerminalView (LocalProcessTerminalView subclass)
+    → IME: setMarkedText / insertText → VT sequences to PTY
+    → dataReceived: PTY output → OutputMonitor scans OSC 9
+      → onAttentionNeeded → NotificationManager → FloatingNotificationPanel
+
+Claude Code hook events:
+  claude triggers hook → ~/.powershell/hooks/powershell-hook.sh
+    → injects POWERSHELL_SESSION_ID → HTTP POST 127.0.0.1:<port>
+      → HookNotificationServer → HookEventRouter
+        → coreRoute (SessionStart/End/Notification dispatch)
+        → PluginManager.dispatchHookEvent (plugin fan-out)
 ```
 
 ### Key Files & Roles
 
-- `App/PowerShellApp.swift` — @main, NavigationSplitView, TerminalDetailView (assembles all pieces), TerminalReference (SwiftUI↔AppKit bridge)
-- `Views/TerminalView.swift` — **InterceptingTerminalView**: subclasses SwiftTerm's `LocalProcessTerminalView`, overrides `insertText` (tracks input, handles IME) and `send(source:data:)` (intercepts Enter/Escape/Backspace/arrow keys, triggers NL detection). Also contains TerminalPaneView (NSViewRepresentable) and TerminalHostView (responder chain)
-- `ViewModels/NLViewModel.swift` — NL detection + LLM conversion + suggestion state machine
-- `Services/NLDetector.swift` — Local rule-based classifier. Priority: shell syntax → known command → flag → Chinese chars → NL patterns → default command
-- `Services/LLMService.swift` — Provider registry; `LLMProviding` protocol has single method `convert(naturalLanguage:context:)`
-- `Services/AnthropicProvider.swift` / `OpenAIProvider.swift` — HTTP clients with identical system prompts; OpenAIProvider reused for DeepSeek
+- `App/PowerShellApp.swift` — @main, NavigationSplitView, TerminalDetailView, TerminalReference (SwiftUI↔AppKit bridge), plugin/service wiring in `.task{}`
+- `Views/TerminalView.swift` — **InterceptingTerminalView**: subclasses SwiftTerm's `LocalProcessTerminalView`, handles IME composition, monitors PTY output via OutputMonitor. Also contains TerminalPaneView (NSViewRepresentable) and TerminalHostView (responder chain)
+- `ViewModels/SessionManager.swift` — @Observable, manages session lifecycle, split-pane state, Claude Code session mapping, unread counts
+- `Services/HookNotificationServer.swift` — TCP server (NWListener, port 9786–9796), receives Claude Code hook events
+- `Services/HookConfigurator.swift` — Writes hook script + patches `~/.claude/settings.json`
+- `Services/NotificationManager.swift` — Floating notification facade
+- `Services/OutputMonitor.swift` — Scans PTY byte stream for OSC 9 escape sequences
+- `Services/SkillInstaller.swift` — Copies bundled SKILL.md files to `~/.claude/skills/`
+- `Plugins/PowerShellPlugin.swift` — Plugin protocol definition
+- `Plugins/PluginManager.swift` — Plugin registry + fan-out dispatch
+- `Plugins/HookEventRouter.swift` — Core hook routing + plugin broadcast
+- `Plugins/PluginRegistry.swift` — Plugin registration array (the only file plugin authors need to modify)
 
 ### Non-Obvious Patterns
 
-- **Ctrl+U (0x15) protocol**: When NL detected, sends byte 0x15 to shell to clear line before showing overlay. Same byte typed by user resets `inputBuffer` and `bufferReliable`.
-- **History navigation disables NL detection**: Up/Down arrow sets `bufferReliable=false` — shell populates history content that the app can't track, so Enter skips NL check and executes directly.
-- **Suggestion Enter interception**: When `hasActiveSuggestion=true`, Enter confirms the suggestion instead of going to the shell. Flag set after LLM response, cleared on confirm/cancel.
-- **Session independence**: All sessions live simultaneously in a ZStack with opacity toggling. Each owns its own InterceptingTerminalView + PTY process.
-- **Shared LLMService**: One instance shared between NLViewModel (conversion) and SettingsView (config). Settings changes take effect immediately via `registerProvider()`.
-- **API keys**: Keychain (service `com.powershell.app`); other config in UserDefaults.
+- **ZStack opacity toggling**: All sessions live simultaneously in a ZStack. Only the active session (or split pair) has opacity 1 and hit testing enabled. PTY processes are never torn down on switch.
+- **POWERSHELL_SESSION_ID env var contract**: Injected at PTY launch, read by hook script, used to correlate Claude Code events to specific terminal panes.
+- **Split-pair state memory**: `storedSplitPair` caches the split when navigating away; restored transparently when returning.
+- **Hook script versioning**: `HookConfigurator` checks `.script-version` file to avoid unnecessary rewrites.
 - **UI language is Chinese** — all user-facing strings are 中文.
-- **Edit suggestion is incomplete**: `handleEditSuggestion()` returns the suggested command but doesn't place it in the terminal input — just cancels.
+
+## Plugin System
+
+### Development Rules
+
+**When implementing new features, always follow this priority:**
+
+1. **Plugin first**: Evaluate whether the feature can be implemented as a plugin. If yes, implement it as a plugin — do NOT modify core files.
+2. **Core only when necessary**: If the feature cannot be implemented as a plugin (e.g., it requires changes to session lifecycle, terminal rendering, or the navigation structure), explain to the user WHY it cannot be a plugin before modifying core files.
+3. **Extend plugin capabilities**: If a feature is conceptually a plugin but the current plugin protocol lacks the required hook, prefer extending `PowerShellPlugin` protocol with a new optional method (with default no-op) over bypassing the plugin system.
+
+### Core Files (protected — avoid modifying)
+
+These files form the stable core. Modification requires explicit justification:
+
+- `App/PowerShellApp.swift`
+- `ViewModels/SessionManager.swift`
+- `Views/TerminalView.swift`
+- `Services/HookNotificationServer.swift`
+- `Services/NotificationManager.swift`
+- `Services/HookConfigurator.swift`
+- `Services/SkillInstaller.swift`
+- `Services/OutputMonitor.swift`
+
+### Creating a Plugin
+
+1. Create a new file in `Sources/PowerShell/Plugins/`, e.g. `MyPlugin.swift`
+2. Conform to `PowerShellPlugin` protocol — implement `pluginId` and `setup()`, override optional hooks as needed
+3. Register in `Plugins/PluginRegistry.swift` by adding an instance to the `makePlugins()` array
+
+### Plugin Capabilities
+
+Plugins can:
+- Subscribe to Claude Code hook events (`handleHookEvent`)
+- React to terminal lifecycle events (`terminalCreated`, `directoryChanged`, `processTerminated`, `terminalFocused`)
+- Contribute Settings UI sections (`settingsSection`)
+- Bundle and auto-install Claude Code skills (`skillsDirectoryPath`)

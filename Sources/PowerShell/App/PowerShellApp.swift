@@ -74,7 +74,10 @@ struct PowerShellApp: App {
         }
 
         Settings {
-            SettingsView(themeManager: themeManager)
+            SettingsView(
+                themeManager: themeManager,
+                pluginSettingsSections: PluginManager.shared.settingsSections()
+            )
         }
     }
 }
@@ -115,54 +118,21 @@ private struct RootContentView: View {
                 .frame(width: 0, height: 0)
         )
         .task {
+            PluginManager.shared.register(PluginRegistry.makePlugins())
+            PluginManager.shared.runSetup()
+
             NotificationManager.shared.onNotificationClicked = { sessionIdString in
                 guard let sessionId = UUID(uuidString: sessionIdString) else { return }
                 sessionManager.switchTo(sessionId: sessionId)
                 NSApp.activate(ignoringOtherApps: true)
             }
 
-            HookNotificationServer.shared.onHookNotification = { event in
-                let claudeSessionId = event.session_id ?? ""
-                DebugLog.write("[HookRouter] event=\(event.hook_event_name), session_id=\(claudeSessionId), type=\(event.notification_type ?? "nil"), psid=\(event.powershell_session_id ?? "nil")")
+            HookEventRouter.wire(sessionManager: sessionManager)
 
-                switch event.hook_event_name {
-                case "SessionStart":
-                    sessionManager.handleClaudeSessionStart(
-                        claudeSessionId: claudeSessionId,
-                        powershellSessionId: event.powershell_session_id
-                    )
-                case "SessionEnd":
-                    sessionManager.handleClaudeSessionEnd(
-                        claudeSessionId: claudeSessionId,
-                        powershellSessionId: event.powershell_session_id
-                    )
-                default:
-                    let targetSessionId: UUID?
-                    if let psid = event.powershell_session_id {
-                        targetSessionId = sessionManager.sessionForPowershellSession(psid)
-                            ?? sessionManager.sessionForClaudeSession(claudeSessionId)
-                            ?? sessionManager.activeSessionId
-                    } else {
-                        targetSessionId = sessionManager.sessionForClaudeSession(claudeSessionId)
-                            ?? sessionManager.activeSessionId
-                    }
-                    let sessionName = targetSessionId.flatMap { id in
-                        sessionManager.sessions.first(where: { $0.id == id })?.name
-                    } ?? "终端"
-                    DebugLog.write("[HookRouter] sending notification: targetSession=\(targetSessionId?.uuidString ?? "nil"), name=\(sessionName)")
-                    NotificationManager.shared.send(
-                        title: "PowerShell [\(sessionName)]",
-                        body: event.displayMessage,
-                        sessionId: targetSessionId?.uuidString ?? ""
-                    )
-                    if let id = targetSessionId, id != sessionManager.activeSessionId {
-                        sessionManager.incrementUnread(sessionId: id)
-                    }
-                }
-            }
             HookConfigurator.shared.configureIfNeeded()
             HookNotificationServer.shared.start()
             SkillInstaller.installIfNeeded()
+            PluginManager.shared.installSkills()
         }
     }
 
@@ -213,9 +183,13 @@ private struct RootContentView: View {
             isActive: isSingleActive || isPrimary,
             onSessionActivityChanged: { isActive in
                 sessionManager.setActiveActivity(sessionId: session.id, isActive: isActive)
+                if !isActive {
+                    PluginManager.shared.dispatchProcessTerminated(session: session)
+                }
             },
             onDirectoryChanged: { directory in
                 sessionManager.updateDirectory(sessionId: session.id, directory: directory)
+                PluginManager.shared.dispatchDirectoryChanged(to: directory, session: session)
             },
             onAttentionNeeded: { type in
                 guard session.id != sessionManager.activeSessionId else { return }
@@ -232,6 +206,7 @@ private struct RootContentView: View {
             },
             onTerminalFocused: {
                 sessionManager.clearUnread(sessionId: session.id)
+                PluginManager.shared.dispatchTerminalFocused(session: session)
             },
             isSplitPrimary: isPrimary,
             isSplitSecondary: isSecondary,
@@ -494,6 +469,7 @@ struct TerminalDetailView: View {
                         }
 
                         terminal.setupOutputMonitor()
+                        PluginManager.shared.dispatchTerminalCreated(terminal, session: session)
 
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                             terminalRef.focus()
