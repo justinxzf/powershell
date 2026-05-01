@@ -31,6 +31,13 @@ protocol PowerShellPlugin: AnyObject {
     // MARK: - Skills
 
     var skillsDirectoryPath: String? { get }
+
+    // MARK: - Layout & UI
+
+    func sessionDidActivate(sessionId: UUID)
+    func sessionWillDelete(sessionId: UUID)
+    func overlayView(size: CGSize) -> AnyView?
+    func headerAccessoryView(for session: Session, allSessions: [Session]) -> AnyView?
 }
 
 extension PowerShellPlugin {
@@ -41,4 +48,8 @@ extension PowerShellPlugin {
     func terminalFocused(session: Session) {}
     func settingsSection() -> (any View)? { nil }
     var skillsDirectoryPath: String? { nil }
+    func sessionDidActivate(sessionId: UUID) {}
+    func sessionWillDelete(sessionId: UUID) {}
+    func overlayView(size: CGSize) -> AnyView? { nil }
+    func headerAccessoryView(for session: Session, allSessions: [Session]) -> AnyView? { nil }
 }

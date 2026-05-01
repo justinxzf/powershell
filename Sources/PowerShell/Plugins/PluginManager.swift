@@ -1,11 +1,19 @@
 import SwiftUI
 
+@Observable
 @MainActor
 final class PluginManager {
 
     static let shared = PluginManager()
 
     private var plugins: [any PowerShellPlugin] = []
+
+    // SplitPlugin 在 setup() 时注册自身，供 RootContentView 直接观察
+    private(set) var splitPlugin: SplitPlugin? = nil
+
+    func registerSplitPlugin(_ plugin: SplitPlugin) {
+        splitPlugin = plugin
+    }
 
     func register(_ plugins: [any PowerShellPlugin]) {
         self.plugins = plugins
@@ -59,6 +67,28 @@ final class PluginManager {
         for plugin in plugins {
             plugin.terminalFocused(session: session)
         }
+    }
+
+    func dispatchSessionDidActivate(sessionId: UUID) {
+        for plugin in plugins {
+            plugin.sessionDidActivate(sessionId: sessionId)
+        }
+    }
+
+    func dispatchSessionWillDelete(sessionId: UUID) {
+        for plugin in plugins {
+            plugin.sessionWillDelete(sessionId: sessionId)
+        }
+    }
+
+    // MARK: - Layout & UI
+
+    func firstOverlayView(size: CGSize) -> AnyView? {
+        plugins.lazy.compactMap { $0.overlayView(size: size) }.first
+    }
+
+    func firstHeaderAccessory(for session: Session, allSessions: [Session]) -> AnyView? {
+        plugins.lazy.compactMap { $0.headerAccessoryView(for: session, allSessions: allSessions) }.first
     }
 
     // MARK: - Settings UI

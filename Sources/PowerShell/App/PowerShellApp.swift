@@ -39,6 +39,11 @@ final class FullScreenToolbarConfigurator: NSObject, FullScreenToolbarPersisting
         applyFullScreenToolbarPersistence(to: window)
     }
 
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        sender.orderOut(nil)
+        return false
+    }
+
     private func applyFullScreenToolbarPersistence(to window: NSWindow) {
         window.toolbar?.showsBaselineSeparator = false
         window.toolbarStyle = .unifiedCompact
@@ -144,11 +149,8 @@ private struct RootContentView: View {
                     terminalPane(for: session, geoWidth: geo.size.width, geoHeight: geo.size.height)
                 }
 
-                if sessionManager.splitPair != nil {
-                    SplitDividerView(
-                        ratio: $sessionManager.splitRatio,
-                        totalWidth: geo.size.width
-                    )
+                if let overlay = PluginManager.shared.firstOverlayView(size: geo.size) {
+                    overlay
                 }
 
                 if sessionManager.sessions.isEmpty {
@@ -160,22 +162,15 @@ private struct RootContentView: View {
 
     @ViewBuilder
     private func terminalPane(for session: Session, geoWidth: CGFloat, geoHeight: CGFloat) -> some View {
-        let isPrimary = sessionManager.splitPair?.primary == session.id
-        let isSecondary = sessionManager.splitPair?.secondary == session.id
-        let isInSplit = isPrimary || isSecondary
-        let isSingleActive = sessionManager.splitPair == nil && session.id == sessionManager.activeSessionId
+        let sp = PluginManager.shared.splitPlugin
+        let inLayout = sp?.splitLayout?.contains(session.id) ?? false
+        let isPrimary = sp?.isPrimary(sessionId: session.id) ?? false
+        let isSingleActive = sp?.splitLayout == nil && session.id == sessionManager.activeSessionId
 
-        let paneW: CGFloat = {
-            if isPrimary { return geoWidth * sessionManager.splitRatio }
-            if isSecondary { return geoWidth * (1 - sessionManager.splitRatio) }
-            return geoWidth
-        }()
+        let frame: CGRect = sp?.paneFrame(for: session.id, W: geoWidth, H: geoHeight)
+            ?? CGRect(x: 0, y: 0, width: geoWidth, height: geoHeight)
 
-        let paneX: CGFloat = isSecondary ? geoWidth * sessionManager.splitRatio : 0
-
-        let secName: String? = isPrimary
-            ? sessionManager.sessions.first(where: { $0.id == sessionManager.splitPair?.secondary })?.name
-            : nil
+        let accessory = PluginManager.shared.firstHeaderAccessory(for: session, allSessions: sessionManager.sessions)
 
         TerminalDetailView(
             session: session,
@@ -208,20 +203,12 @@ private struct RootContentView: View {
                 sessionManager.clearUnread(sessionId: session.id)
                 PluginManager.shared.dispatchTerminalFocused(session: session)
             },
-            isSplitPrimary: isPrimary,
-            isSplitSecondary: isSecondary,
-            splitSecondaryName: secName,
-            allSessions: sessionManager.sessions,
-            onSplitRequested: { primaryId, secondaryId in
-                guard sessionManager.splitPair == nil else { return }
-                sessionManager.split(primary: primaryId, secondary: secondaryId)
-            },
-            onUnsplit: { sessionManager.unsplit() }
+            headerAccessoryView: accessory
         )
-        .frame(width: paneW, height: geoHeight)
-        .offset(x: paneX)
-        .opacity(isSingleActive || isInSplit ? 1 : 0)
-        .allowsHitTesting(isSingleActive || isInSplit)
+        .frame(width: frame.width, height: frame.height)
+        .offset(x: frame.minX, y: frame.minY)
+        .opacity(isSingleActive || inLayout ? 1 : 0)
+        .allowsHitTesting(isSingleActive || inLayout)
     }
 
     private var emptyStateView: some View {
@@ -282,6 +269,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         appIconProvider.applyAppIcon()
         NSApp.activate(ignoringOtherApps: true)
+
+        // Prevent WindowGroup from destroying windows on close — hide instead
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: nil,
+            queue: .main
+        ) { notification in
+            guard let window = notification.object as? NSWindow, !(window is NSPanel) else { return }
+            MainActor.assumeIsolated {
+                window.isReleasedWhenClosed = false
+            }
+        }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if flag { return true }
+        // Find a hidden content window and restore it; return false to prevent WindowGroup from creating a new one
+        if let window = sender.windows.first(where: { !$0.isVisible && !($0 is NSPanel) }) {
+            window.makeKeyAndOrderFront(nil)
+            return false
+        }
+        return true
     }
 
     func applicationWillBecomeActive(_ notification: Notification) {
@@ -312,31 +321,16 @@ final class TerminalReference: ObservableObject {
     }
 }
 
-enum TerminalHeaderAccessory: Equatable {
-    case splitMenu
-    case splitSummary(String)
-    case none
-}
-
 struct TerminalHeaderPresentation: Equatable {
     let title: String
-    let accessory: TerminalHeaderAccessory
 
-    init(session: Session, terminalTitle: String, splitSecondaryName: String?, isSplitSecondary: Bool) {
+    init(session: Session, terminalTitle: String) {
         if let currentDirectory = session.currentDirectory, !currentDirectory.isEmpty {
             self.title = currentDirectory
         } else if !terminalTitle.isEmpty {
             self.title = terminalTitle
         } else {
             self.title = session.name
-        }
-
-        if isSplitSecondary {
-            self.accessory = .none
-        } else if let splitSecondaryName, !splitSecondaryName.isEmpty {
-            self.accessory = .splitSummary(splitSecondaryName)
-        } else {
-            self.accessory = .splitMenu
         }
     }
 }
@@ -351,65 +345,13 @@ struct TerminalDetailView: View {
     var onDirectoryChanged: ((String?) -> Void)?
     var onAttentionNeeded: ((AttentionType) -> Void)?
     var onTerminalFocused: (() -> Void)?
-    var isSplitPrimary: Bool = false
-    var isSplitSecondary: Bool = false
-    var splitSecondaryName: String? = nil
-    var allSessions: [Session] = []
-    var onSplitRequested: ((UUID, UUID) -> Void)? = nil
-    var onUnsplit: (() -> Void)? = nil
+    var headerAccessoryView: AnyView? = nil
 
     @StateObject private var terminalRef = TerminalReference()
     @State private var terminalTitle: String = ""
 
     private var headerPresentation: TerminalHeaderPresentation {
-        TerminalHeaderPresentation(
-            session: session,
-            terminalTitle: terminalTitle,
-            splitSecondaryName: splitSecondaryName,
-            isSplitSecondary: isSplitSecondary
-        )
-    }
-
-    private var availableSessionsForSplit: [Session] {
-        allSessions.filter { $0.id != session.id }
-    }
-
-    @ViewBuilder
-    private var headerAccessory: some View {
-        switch headerPresentation.accessory {
-        case .splitSummary(let secName):
-            Text("│")
-                .foregroundStyle(.tertiary)
-            Text(secName)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Button {
-                onUnsplit?()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help("取消分屏")
-        case .splitMenu:
-            Menu {
-                ForEach(availableSessionsForSplit, id: \.id) { s in
-                    Button(s.name) {
-                        onSplitRequested?(session.id, s.id)
-                    }
-                }
-            } label: {
-                Image(systemName: "rectangle.split.2x1")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .help("分屏显示另一个终端")
-        case .none:
-            EmptyView()
-        }
+        TerminalHeaderPresentation(session: session, terminalTitle: terminalTitle)
     }
 
     var body: some View {
@@ -432,7 +374,9 @@ struct TerminalDetailView: View {
 
                 Spacer()
 
-                headerAccessory
+                if let accessory = headerAccessoryView {
+                    accessory
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)

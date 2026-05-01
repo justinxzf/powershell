@@ -9,22 +9,10 @@ class SessionManager {
     var activeSessionId: UUID? {
         didSet {
             guard let sessionId = activeSessionId, sessionId != oldValue else { return }
-            if let pair = splitPair {
-                if pair.primary != sessionId && pair.secondary != sessionId {
-                    storedSplitPair = pair
-                    splitPair = nil
-                }
-            } else if let stored = storedSplitPair,
-                      stored.primary == sessionId || stored.secondary == sessionId {
-                splitPair = stored
-                storedSplitPair = nil
-            }
+            PluginManager.shared.dispatchSessionDidActivate(sessionId: sessionId)
             clearUnread(sessionId: sessionId)
         }
     }
-    var splitPair: (primary: UUID, secondary: UUID)?
-    var splitRatio: Double = 0.5
-    private var storedSplitPair: (primary: UUID, secondary: UUID)?
     var unreadCounts: [UUID: Int] = [:]
 
     // Maps Claude Code session_id → app Session UUID
@@ -70,25 +58,8 @@ class SessionManager {
         }
     }
 
-    func split(primary: UUID, secondary: UUID) {
-        storedSplitPair = nil
-        splitPair = (primary: primary, secondary: secondary)
-        splitRatio = 0.5
-    }
-
-    func unsplit() {
-        storedSplitPair = nil
-        splitPair = nil
-    }
-
     func delete(sessionId: UUID) {
-        // 若被删 session 在分屏中，先取消分屏
-        if let pair = splitPair, pair.primary == sessionId || pair.secondary == sessionId {
-            unsplit()
-        }
-        if let stored = storedSplitPair, stored.primary == sessionId || stored.secondary == sessionId {
-            storedSplitPair = nil
-        }
+        PluginManager.shared.dispatchSessionWillDelete(sessionId: sessionId)
         sessions.removeAll { $0.id == sessionId }
         powershellSessionIndex.removeValue(forKey: sessionId.uuidString)
         if activeSessionId == sessionId {
