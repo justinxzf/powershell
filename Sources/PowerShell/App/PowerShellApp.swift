@@ -309,10 +309,11 @@ struct TerminalHeaderPresentation: Equatable {
     let title: String
 
     init(session: Session, terminalTitle: String) {
+        let prefix = "[\(session.name)]"
         if let currentDirectory = session.currentDirectory, !currentDirectory.isEmpty {
-            self.title = currentDirectory
+            self.title = "\(prefix)\(currentDirectory)"
         } else if !terminalTitle.isEmpty {
-            self.title = terminalTitle
+            self.title = "\(prefix)\(terminalTitle)"
         } else {
             self.title = session.name
         }
