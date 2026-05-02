@@ -22,7 +22,6 @@ final class SplitPlugin: PowerShellPlugin {
     var splitHRatio: Double = 0.5
     var splitVRatio: Double = 0.5
     private var storedSplitLayout: SplitLayout? = nil
-    var pendingGridSlot1: UUID? = nil
 
     func setup() {
         PluginManager.shared.registerSplitPlugin(self)
@@ -34,14 +33,26 @@ final class SplitPlugin: PowerShellPlugin {
         storedSplitLayout = nil
         splitLayout = .horizontal(left: left, right: right)
         splitHRatio = 0.5
-        pendingGridSlot1 = nil
     }
 
     func splitVertical(top: UUID, bottom: UUID) {
         storedSplitLayout = nil
         splitLayout = .vertical(top: top, bottom: bottom)
         splitVRatio = 0.5
-        pendingGridSlot1 = nil
+    }
+
+    func splitTopDouble(topLeft: UUID, topRight: UUID, bottom: UUID) {
+        storedSplitLayout = nil
+        splitLayout = .topDouble(topLeft: topLeft, topRight: topRight, bottom: bottom)
+        splitHRatio = 0.5
+        splitVRatio = 0.5
+    }
+
+    func splitBottomDouble(top: UUID, bottomLeft: UUID, bottomRight: UUID) {
+        storedSplitLayout = nil
+        splitLayout = .bottomDouble(top: top, bottomLeft: bottomLeft, bottomRight: bottomRight)
+        splitHRatio = 0.5
+        splitVRatio = 0.5
     }
 
     func splitGrid(topLeft: UUID, topRight: UUID, bottomLeft: UUID, bottomRight: UUID) {
@@ -49,13 +60,11 @@ final class SplitPlugin: PowerShellPlugin {
         splitLayout = .grid(topLeft: topLeft, topRight: topRight, bottomLeft: bottomLeft, bottomRight: bottomRight)
         splitHRatio = 0.5
         splitVRatio = 0.5
-        pendingGridSlot1 = nil
     }
 
     func unsplit() {
         storedSplitLayout = nil
         splitLayout = nil
-        pendingGridSlot1 = nil
     }
 
     // MARK: - Layout Helpers
@@ -64,6 +73,8 @@ final class SplitPlugin: PowerShellPlugin {
         switch splitLayout {
         case .horizontal(let l, _): return l == sessionId
         case .vertical(let t, _): return t == sessionId
+        case .topDouble(let tl, _, _): return tl == sessionId
+        case .bottomDouble(let t, _, _): return t == sessionId
         case .grid(let tl, _, _, _): return tl == sessionId
         default: return false
         }
@@ -74,16 +85,24 @@ final class SplitPlugin: PowerShellPlugin {
         let vr = splitVRatio
         switch splitLayout {
         case .horizontal(let l, let r):
-            if sessionId == l { return CGRect(x: 0,    y: 0, width: W * hr,      height: H) }
-            if sessionId == r { return CGRect(x: W * hr, y: 0, width: W * (1 - hr), height: H) }
+            if sessionId == l { return CGRect(x: 0,      y: 0,      width: W * hr,       height: H) }
+            if sessionId == r { return CGRect(x: W * hr,  y: 0,      width: W * (1 - hr), height: H) }
         case .vertical(let t, let b):
             if sessionId == t { return CGRect(x: 0, y: 0,      width: W, height: H * vr) }
             if sessionId == b { return CGRect(x: 0, y: H * vr, width: W, height: H * (1 - vr)) }
+        case .topDouble(let tl, let tr, let b):
+            if sessionId == tl { return CGRect(x: 0,      y: 0,      width: W * hr,       height: H * vr) }
+            if sessionId == tr { return CGRect(x: W * hr,  y: 0,      width: W * (1 - hr), height: H * vr) }
+            if sessionId == b  { return CGRect(x: 0,      y: H * vr, width: W,             height: H * (1 - vr)) }
+        case .bottomDouble(let t, let bl, let br):
+            if sessionId == t  { return CGRect(x: 0,      y: 0,      width: W,             height: H * vr) }
+            if sessionId == bl { return CGRect(x: 0,      y: H * vr, width: W * hr,        height: H * (1 - vr)) }
+            if sessionId == br { return CGRect(x: W * hr,  y: H * vr, width: W * (1 - hr), height: H * (1 - vr)) }
         case .grid(let tl, let tr, let bl, let br):
-            if sessionId == tl { return CGRect(x: 0,      y: 0,      width: W * hr,      height: H * vr) }
-            if sessionId == tr { return CGRect(x: W * hr, y: 0,      width: W * (1 - hr), height: H * vr) }
-            if sessionId == bl { return CGRect(x: 0,      y: H * vr, width: W * hr,      height: H * (1 - vr)) }
-            if sessionId == br { return CGRect(x: W * hr, y: H * vr, width: W * (1 - hr), height: H * (1 - vr)) }
+            if sessionId == tl { return CGRect(x: 0,      y: 0,      width: W * hr,       height: H * vr) }
+            if sessionId == tr { return CGRect(x: W * hr,  y: 0,      width: W * (1 - hr), height: H * vr) }
+            if sessionId == bl { return CGRect(x: 0,      y: H * vr, width: W * hr,       height: H * (1 - vr)) }
+            if sessionId == br { return CGRect(x: W * hr,  y: H * vr, width: W * (1 - hr), height: H * (1 - vr)) }
         case .none:
             return nil
         }
@@ -98,6 +117,12 @@ final class SplitPlugin: PowerShellPlugin {
         case .vertical(let t, let b):
             if sessionId == t { return .vPrimary(secondaryId: b) }
             if sessionId == b { return .secondary }
+        case .topDouble(let tl, _, _):
+            if sessionId == tl { return .gridControl }
+            if splitLayout!.contains(sessionId) { return .secondary }
+        case .bottomDouble(let t, _, _):
+            if sessionId == t { return .gridControl }
+            if splitLayout!.contains(sessionId) { return .secondary }
         case .grid(let tl, _, _, _):
             if sessionId == tl { return .gridControl }
             if splitLayout!.contains(sessionId) { return .secondary }
@@ -148,7 +173,7 @@ struct SplitOverlayView: View {
             SplitDividerView(axis: .vertical, ratio: $plugin.splitHRatio, totalSize: size.width)
         case .vertical:
             SplitDividerView(axis: .horizontal, ratio: $plugin.splitVRatio, totalSize: size.height)
-        case .grid:
+        case .topDouble, .bottomDouble, .grid:
             SplitDividerView(axis: .vertical,   ratio: $plugin.splitHRatio, totalSize: size.width)
             SplitDividerView(axis: .horizontal, ratio: $plugin.splitVRatio, totalSize: size.height)
         case .none:
@@ -170,6 +195,8 @@ struct SplitHeaderAccessoryView: View {
             switch plugin.splitLayout {
             case .horizontal(let l, let r): ids.insert(l); ids.insert(r)
             case .vertical(let t, let b): ids.insert(t); ids.insert(b)
+            case .topDouble(let tl, let tr, let b): ids.formUnion([tl, tr, b])
+            case .bottomDouble(let t, let bl, let br): ids.formUnion([t, bl, br])
             case .grid(let tl, let tr, let bl, let br): ids.formUnion([tl, tr, bl, br])
             case .none: break
             }
@@ -179,64 +206,99 @@ struct SplitHeaderAccessoryView: View {
     }
 
     var body: some View {
-        switch plugin.role(of: session.id) {
-        case .singlePane:
-            splitMenuView
-        case .hPrimary(let secId):
-            splitSummaryView(secondaryId: secId, isVertical: false)
-        case .vPrimary(let secId):
-            splitSummaryView(secondaryId: secId, isVertical: true)
-        case .gridControl:
-            unsplitButton
-        case .secondary:
-            EmptyView()
+        HStack(spacing: 8) {
+            switch plugin.role(of: session.id) {
+            case .singlePane:
+                splitMenuView
+            case .hPrimary(let secId):
+                splitSummaryView(secondaryId: secId, isVertical: false)
+            case .vPrimary(let secId):
+                splitSummaryView(secondaryId: secId, isVertical: true)
+            case .gridControl:
+                unsplitButton
+            case .secondary:
+                EmptyView()
+            }
+        }
+        .fixedSize()
+    }
+
+    // MARK: - Single pane buttons
+
+    @ViewBuilder
+    private var splitMenuView: some View {
+        splitDirectionButton(layout: .horizontalSplit)
+        splitDirectionButton(layout: .verticalSplit)
+        splitTripleButton(topDouble: true)
+        splitTripleButton(topDouble: false)
+        splitGridButton
+    }
+
+    private enum SplitDirection {
+        case horizontalSplit, verticalSplit
+        var icon: String {
+            switch self {
+            case .horizontalSplit: return "rectangle.split.2x1"
+            case .verticalSplit: return "rectangle.split.1x2"
+            }
+        }
+        var help: String {
+            switch self {
+            case .horizontalSplit: return "左右分屏"
+            case .verticalSplit: return "上下分屏"
+            }
         }
     }
 
-    // 单窗格分屏按钮：水平和垂直各一个
     @ViewBuilder
-    private var splitMenuView: some View {
-        splitDirectionButton(horizontal: true)
-        splitDirectionButton(horizontal: false)
-    }
-
-    @ViewBuilder
-    private func splitDirectionButton(horizontal: Bool) -> some View {
+    private func splitDirectionButton(layout: SplitDirection) -> some View {
         let others = allSessions.filter { $0.id != session.id }
-        let icon = horizontal ? "rectangle.split.2x1" : "rectangle.split.1x2"
-        let help = horizontal ? "左右分屏" : "上下分屏"
-
-        if others.isEmpty {
-            EmptyView()
-        } else if others.count == 1, let other = others.first {
-            Button {
-                if horizontal {
-                    plugin.splitHorizontal(left: session.id, right: other.id)
-                } else {
-                    plugin.splitVertical(top: session.id, bottom: other.id)
-                }
-            } label: {
-                Image(systemName: icon)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help(help)
-        } else {
+        if !others.isEmpty {
             Menu {
                 ForEach(others, id: \.id) { s in
                     Button(s.name) {
-                        if horizontal {
-                            plugin.splitHorizontal(left: session.id, right: s.id)
-                        } else {
-                            plugin.splitVertical(top: session.id, bottom: s.id)
+                        let sid = session.id, oid = s.id
+                        Task { @MainActor in
+                            switch layout {
+                            case .horizontalSplit: plugin.splitHorizontal(left: sid, right: oid)
+                            case .verticalSplit:   plugin.splitVertical(top: sid, bottom: oid)
+                            }
                         }
                     }
                 }
             } label: {
-                Image(systemName: icon)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Image(systemName: layout.icon).font(.caption).foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .help(layout.help)
+        }
+    }
+
+    // 上2下1 / 上1下2：直接展示所有终端对，单次点击完成
+    @ViewBuilder
+    private func splitTripleButton(topDouble: Bool) -> some View {
+        let others = allSessions.filter { $0.id != session.id }
+        let pairs = makePairs(others)
+        if !pairs.isEmpty {
+            let icon = topDouble ? "rectangle.topthird.inset.filled" : "rectangle.bottomthird.inset.filled"
+            let help = topDouble ? "上2下1分屏" : "上1下2分屏"
+            Menu {
+                ForEach(pairs.indices, id: \.self) { i in
+                    let (s1, s2) = pairs[i]
+                    Button("\(s1.name)  ·  \(s2.name)") {
+                        let sid = session.id, id1 = s1.id, id2 = s2.id
+                        Task { @MainActor in
+                            if topDouble {
+                                plugin.splitTopDouble(topLeft: sid, topRight: id1, bottom: id2)
+                            } else {
+                                plugin.splitBottomDouble(top: sid, bottomLeft: id1, bottomRight: id2)
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: icon).font(.caption).foregroundStyle(.secondary)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -244,17 +306,41 @@ struct SplitHeaderAccessoryView: View {
         }
     }
 
-    // 两窗格分屏时 primary 的 summary：名称 + 取消 + 扩展四宫格
+    // 四宫格：直接展示所有三终端组合，单次点击完成
+    @ViewBuilder
+    private var splitGridButton: some View {
+        let others = allSessions.filter { $0.id != session.id }
+        let triples = makeTriples(others)
+        if !triples.isEmpty {
+            Menu {
+                ForEach(triples.indices, id: \.self) { i in
+                    let (s1, s2, s3) = triples[i]
+                    Button("\(s1.name)  ·  \(s2.name)  ·  \(s3.name)") {
+                        let sid = session.id, id1 = s1.id, id2 = s2.id, id3 = s3.id
+                        Task { @MainActor in
+                            plugin.splitGrid(topLeft: sid, topRight: id1, bottomLeft: id2, bottomRight: id3)
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "rectangle.split.2x2").font(.caption).foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .help("四宫格分屏")
+        }
+    }
+
+    // MARK: - Two-pane summary & expand
+
     @ViewBuilder
     private func splitSummaryView(secondaryId: UUID, isVertical: Bool) -> some View {
         let secName = allSessions.first(where: { $0.id == secondaryId })?.name ?? ""
         Text("│").foregroundStyle(.tertiary)
-        Text(secName)
-            .font(.caption)
-            .foregroundStyle(.secondary)
+        Text(secName).font(.caption).foregroundStyle(.secondary)
         unsplitButton
-        if availableSessions.count >= 2 {
-            gridExpandMenu(fixedId1: session.id, fixedId2: secondaryId, isVerticalBase: isVertical)
+        if !availableSessions.isEmpty {
+            expandMenu(fixedId1: session.id, fixedId2: secondaryId, isVerticalBase: isVertical)
         }
     }
 
@@ -262,58 +348,94 @@ struct SplitHeaderAccessoryView: View {
         Button {
             plugin.unsplit()
         } label: {
-            Image(systemName: "xmark.circle.fill")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Image(systemName: "xmark.circle.fill").font(.caption).foregroundStyle(.secondary)
         }
         .buttonStyle(.plain)
         .help("取消分屏")
     }
 
-    // 扩展为四宫格：两步选择
-    // isVerticalBase=false 时：fixed1=topLeft, fixed2=topRight，选 bottomLeft 和 bottomRight
-    // isVerticalBase=true  时：fixed1=topLeft, fixed2=bottomLeft，选 topRight 和 bottomRight
-    private func gridExpandMenu(fixedId1: UUID, fixedId2: UUID, isVerticalBase: Bool) -> some View {
-        let pending = plugin.pendingGridSlot1
-        let pendingName = pending.flatMap { id in allSessions.first(where: { $0.id == id })?.name } ?? ""
-        let remaining = availableSessions.filter { $0.id != pending }
+    // 从2格扩展：三宫格选1个，四宫格选一对
+    private func expandMenu(fixedId1: UUID, fixedId2: UUID, isVerticalBase: Bool) -> some View {
+        let avail = availableSessions
+        let pairs = makePairs(avail)
 
         return Menu {
-            if let slot1 = pending {
-                Section("已选: \(pendingName)") {
-                    Button("取消选择") { plugin.pendingGridSlot1 = nil }
-                }
-                Section("选择第四个终端") {
-                    ForEach(remaining, id: \.id) { s in
-                        Button(s.name) {
+            Section("扩展为上2下1") {
+                ForEach(avail, id: \.id) { s in
+                    Button(s.name) {
+                        let id = s.id
+                        Task { @MainActor in
                             if isVerticalBase {
-                                // V-split → grid: top=fixed1, bottom=fixed2
-                                plugin.splitGrid(topLeft: fixedId1, topRight: slot1,
-                                                 bottomLeft: fixedId2, bottomRight: s.id)
+                                plugin.splitTopDouble(topLeft: fixedId1, topRight: id, bottom: fixedId2)
                             } else {
-                                // H-split → grid: left=fixed1, right=fixed2
-                                plugin.splitGrid(topLeft: fixedId1, topRight: fixedId2,
-                                                 bottomLeft: slot1, bottomRight: s.id)
+                                plugin.splitTopDouble(topLeft: fixedId1, topRight: fixedId2, bottom: id)
                             }
                         }
                     }
                 }
-            } else {
-                Section("选择第三个终端") {
-                    ForEach(availableSessions, id: \.id) { s in
-                        Button(s.name) {
-                            plugin.pendingGridSlot1 = s.id
+            }
+            Section("扩展为上1下2") {
+                ForEach(avail, id: \.id) { s in
+                    Button(s.name) {
+                        let id = s.id
+                        Task { @MainActor in
+                            if isVerticalBase {
+                                plugin.splitBottomDouble(top: fixedId1, bottomLeft: fixedId2, bottomRight: id)
+                            } else {
+                                plugin.splitBottomDouble(top: fixedId1, bottomLeft: fixedId2, bottomRight: id)
+                            }
+                        }
+                    }
+                }
+            }
+            if !pairs.isEmpty {
+                Section("扩展为四宫格") {
+                    ForEach(pairs.indices, id: \.self) { i in
+                        let (s1, s2) = pairs[i]
+                        Button("\(s1.name)  ·  \(s2.name)") {
+                            let id1 = s1.id, id2 = s2.id
+                            Task { @MainActor in
+                                if isVerticalBase {
+                                    plugin.splitGrid(topLeft: fixedId1, topRight: id1,
+                                                     bottomLeft: fixedId2, bottomRight: id2)
+                                } else {
+                                    plugin.splitGrid(topLeft: fixedId1, topRight: fixedId2,
+                                                     bottomLeft: id1, bottomRight: id2)
+                                }
+                            }
                         }
                     }
                 }
             }
         } label: {
-            Image(systemName: "rectangle.split.2x2")
-                .font(.caption)
-                .foregroundStyle(pending != nil ? Color.accentColor : .secondary)
+            Image(systemName: "rectangle.split.2x2").font(.caption).foregroundStyle(.secondary)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .help(pending != nil ? "选择第四个终端完成四宫格" : "扩展为四宫格分屏")
+        .help("扩展分屏布局")
+    }
+
+    // MARK: - Combination helpers
+
+    private func makePairs(_ sessions: [Session]) -> [(Session, Session)] {
+        var result: [(Session, Session)] = []
+        for i in sessions.indices {
+            for j in (i + 1)..<sessions.count {
+                result.append((sessions[i], sessions[j]))
+            }
+        }
+        return result
+    }
+
+    private func makeTriples(_ sessions: [Session]) -> [(Session, Session, Session)] {
+        var result: [(Session, Session, Session)] = []
+        for i in sessions.indices {
+            for j in (i + 1)..<sessions.count {
+                for k in (j + 1)..<sessions.count {
+                    result.append((sessions[i], sessions[j], sessions[k]))
+                }
+            }
+        }
+        return result
     }
 }
