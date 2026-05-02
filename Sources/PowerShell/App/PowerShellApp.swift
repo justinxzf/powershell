@@ -39,11 +39,6 @@ final class FullScreenToolbarConfigurator: NSObject, FullScreenToolbarPersisting
         applyFullScreenToolbarPersistence(to: window)
     }
 
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        sender.orderOut(nil)
-        return false
-    }
-
     private func applyFullScreenToolbarPersistence(to window: NSWindow) {
         window.toolbar?.showsBaselineSeparator = false
         window.toolbarStyle = .unifiedCompact
@@ -269,23 +264,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         appIconProvider.applyAppIcon()
         NSApp.activate(ignoringOtherApps: true)
-
-        // Prevent WindowGroup from destroying windows on close — hide instead
-        NotificationCenter.default.addObserver(
-            forName: NSWindow.didBecomeKeyNotification,
-            object: nil,
-            queue: .main
-        ) { notification in
-            guard let window = notification.object as? NSWindow, !(window is NSPanel) else { return }
-            MainActor.assumeIsolated {
-                window.isReleasedWhenClosed = false
-            }
-        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if flag { return true }
-        // Find a hidden content window and restore it; return false to prevent WindowGroup from creating a new one
+        // SwiftUI's WindowGroup keeps closed windows alive internally. Find the existing
+        // content window and re-show it instead of letting SwiftUI spawn a duplicate.
         if let window = sender.windows.first(where: { !$0.isVisible && !($0 is NSPanel) }) {
             window.makeKeyAndOrderFront(nil)
             return false
