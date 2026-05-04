@@ -173,7 +173,17 @@ struct SplitOverlayView: View {
             SplitDividerView(axis: .vertical, ratio: $plugin.splitHRatio, totalSize: size.width)
         case .vertical:
             SplitDividerView(axis: .horizontal, ratio: $plugin.splitVRatio, totalSize: size.height)
-        case .topDouble, .bottomDouble, .grid:
+        case .bottomDouble:
+            SplitDividerView(axis: .horizontal, ratio: $plugin.splitVRatio, totalSize: size.height)
+            SplitDividerView(axis: .vertical, ratio: $plugin.splitHRatio, totalSize: size.width)
+                .frame(height: size.height * (1 - plugin.splitVRatio))
+                .frame(maxHeight: .infinity, alignment: .bottom)
+        case .topDouble:
+            SplitDividerView(axis: .horizontal, ratio: $plugin.splitVRatio, totalSize: size.height)
+            SplitDividerView(axis: .vertical, ratio: $plugin.splitHRatio, totalSize: size.width)
+                .frame(height: size.height * plugin.splitVRatio)
+                .frame(maxHeight: .infinity, alignment: .top)
+        case .grid:
             SplitDividerView(axis: .vertical,   ratio: $plugin.splitHRatio, totalSize: size.width)
             SplitDividerView(axis: .horizontal, ratio: $plugin.splitVRatio, totalSize: size.height)
         case .none:
