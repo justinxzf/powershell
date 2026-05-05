@@ -264,6 +264,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         appIconProvider.applyAppIcon()
         NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.async { [self] in
+            setupFindMenu()
+        }
+    }
+
+    private func setupFindMenu() {
+        guard let mainMenu = NSApp.mainMenu else { return }
+
+        let findAction = #selector(TerminalView.performFindPanelAction(_:))
+
+        let editMenu: NSMenu
+        if let existingItem = mainMenu.items.first(where: {
+            $0.submenu?.identifier?.rawValue == "edit" || $0.title == "Edit" || $0.title == "编辑"
+        }) {
+            editMenu = existingItem.submenu!
+        } else {
+            editMenu = NSMenu(title: "编辑")
+            let editMenuItem = NSMenuItem(title: "编辑", action: nil, keyEquivalent: "")
+            editMenuItem.submenu = editMenu
+            let insertIndex = min(1, mainMenu.items.count)
+            mainMenu.insertItem(editMenuItem, at: insertIndex)
+        }
+
+        let findMenu = NSMenu(title: "查找")
+
+        let showFind = NSMenuItem(title: "查找…", action: findAction, keyEquivalent: "f")
+        showFind.tag = Int(NSFindPanelAction.showFindPanel.rawValue)
+        findMenu.addItem(showFind)
+
+        let findNext = NSMenuItem(title: "查找下一个", action: findAction, keyEquivalent: "g")
+        findNext.tag = Int(NSFindPanelAction.next.rawValue)
+        findMenu.addItem(findNext)
+
+        let findPrev = NSMenuItem(title: "查找上一个", action: findAction, keyEquivalent: "G")
+        findPrev.tag = Int(NSFindPanelAction.previous.rawValue)
+        findPrev.keyEquivalentModifierMask = NSEvent.ModifierFlags([.command, .shift])
+        findMenu.addItem(findPrev)
+
+        findMenu.addItem(.separator())
+
+        let useSelection = NSMenuItem(title: "使用所选内容查找", action: findAction, keyEquivalent: "e")
+        useSelection.tag = Int(NSFindPanelAction.setFindString.rawValue)
+        findMenu.addItem(useSelection)
+
+        editMenu.addItem(.separator())
+        let findMenuItem = NSMenuItem(title: "查找", action: nil, keyEquivalent: "")
+        findMenuItem.submenu = findMenu
+        editMenu.addItem(findMenuItem)
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

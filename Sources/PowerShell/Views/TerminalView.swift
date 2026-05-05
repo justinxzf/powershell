@@ -124,6 +124,35 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
         return false
     }
 
+    // MARK: - Find (Cmd+F / Cmd+G / Shift+Cmd+G)
+
+    public override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard event.modifierFlags.contains(.command),
+              window?.firstResponder === self else {
+            return super.performKeyEquivalent(with: event)
+        }
+        let chars = event.charactersIgnoringModifiers ?? ""
+        let tag: Int?
+        if chars == "f" {
+            tag = Int(NSFindPanelAction.showFindPanel.rawValue)
+        } else if chars == "g" && !event.modifierFlags.contains(.shift) {
+            tag = Int(NSFindPanelAction.next.rawValue)
+        } else if chars == "g" && event.modifierFlags.contains(.shift) {
+            tag = Int(NSFindPanelAction.previous.rawValue)
+        } else if chars == "e" {
+            tag = Int(NSFindPanelAction.setFindString.rawValue)
+        } else {
+            tag = nil
+        }
+        guard let actionTag = tag else {
+            return super.performKeyEquivalent(with: event)
+        }
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        item.tag = actionTag
+        performFindPanelAction(item)
+        return true
+    }
+
     // MARK: - Monitor output for attention signals
 
     public override func dataReceived(slice: ArraySlice<UInt8>) {
