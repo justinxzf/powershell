@@ -324,6 +324,27 @@ final class TerminalHostView: NSView {
             terminalView.topAnchor.constraint(equalTo: topAnchor),
             terminalView.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
+
+        registerForDraggedTypes([.fileURL])
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        let pb = sender.draggingPasteboard
+        guard pb.canReadObject(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) else {
+            return []
+        }
+        return .copy
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let pb = sender.draggingPasteboard
+        guard let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
+              !urls.isEmpty else {
+            return false
+        }
+        let paths = urls.map { $0.path }.joined(separator: " ")
+        terminalView.sendDirect(paths)
+        return true
     }
 
     required init?(coder: NSCoder) {
