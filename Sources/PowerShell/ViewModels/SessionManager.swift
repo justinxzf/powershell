@@ -71,6 +71,10 @@ class SessionManager {
     func setActiveActivity(sessionId: UUID, isActive: Bool) {
         if let index = sessions.firstIndex(where: { $0.id == sessionId }) {
             sessions[index].isActive = isActive
+            if !isActive {
+                sessions[index].claudeCodeActive = false
+                claudeSessionMap = claudeSessionMap.filter { $0.value != sessionId }
+            }
         }
     }
 
@@ -102,6 +106,10 @@ class SessionManager {
         }
 
         guard let sessionId = targetSessionId else { return }
+        // Evict stale entries from previous sessions in the same terminal.
+        // This prevents a late-arriving SessionEnd(old) from wrongly resetting
+        // claudeCodeActive after the new session has already started.
+        claudeSessionMap = claudeSessionMap.filter { $0.value != sessionId }
         claudeSessionMap[claudeSessionId] = sessionId
         if let index = sessions.firstIndex(where: { $0.id == sessionId }) {
             sessions[index].claudeCodeActive = true
@@ -112,7 +120,10 @@ class SessionManager {
         // First try mapping via claudeSessionId
         if let sessionId = claudeSessionMap.removeValue(forKey: claudeSessionId) {
             DebugLog.write("[SessionManager] session end: claudeSessionId=\(claudeSessionId) -> sessionId=\(sessionId)")
-            if let index = sessions.firstIndex(where: { $0.id == sessionId }) {
+            // Only reset if no other Claude session is still active for this terminal.
+            // A stale SessionEnd(A) arriving after SessionStart(B) must not clobber B.
+            if !claudeSessionMap.values.contains(sessionId),
+               let index = sessions.firstIndex(where: { $0.id == sessionId }) {
                 sessions[index].claudeCodeActive = false
             }
             return
