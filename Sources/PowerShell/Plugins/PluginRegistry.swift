@@ -5,6 +5,7 @@ enum PluginRegistry {
     static func makePlugins() -> [any PowerShellPlugin] {
         [
             SplitPlugin(),
+            ChatListPlugin(),
         ]
     }
 }

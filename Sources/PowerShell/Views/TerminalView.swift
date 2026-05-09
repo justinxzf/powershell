@@ -153,6 +153,12 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
         return true
     }
 
+    // MARK: - Command capture
+
+    var onUserCommandEntered: ((String, Int) -> Void)?
+    private var commandCaptureMonitor: Any?
+    private var promptEndCursor: (x: Int, y: Int) = (0, 0)
+
     // MARK: - Monitor output for attention signals
 
     public override func dataReceived(slice: ArraySlice<UInt8>) {
@@ -166,6 +172,10 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
         }
         super.dataReceived(slice: slice)
         outputMonitor.processOutput(slice: slice)
+        if slice.contains(0x0A) || slice.contains(0x0D) {
+            let loc = terminal.getCursorLocation()
+            promptEndCursor = (loc.x, loc.y)
+        }
         if !savedText.isEmpty {
             let width = displayWidth(of: savedText)
             if canRenderMarkedText(width: width) {
@@ -180,6 +190,32 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
         outputMonitor.onAttentionNeeded = { [weak self] type in
             self?.onAttentionNeeded?(type)
         }
+        commandCaptureMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self,
+                  self.window?.firstResponder === self,
+                  event.keyCode == 36 else { return event }
+            self.captureCurrentLineAsCommand()
+            return event
+        }
+    }
+
+    private func captureCurrentLineAsCommand() {
+        let cursor = terminal.getCursorLocation()
+        // Cursor hasn't moved past where the prompt ended → user typed nothing.
+        let userTypedSomething = cursor.y > promptEndCursor.y ||
+            (cursor.y == promptEndCursor.y && cursor.x > promptEndCursor.x)
+        guard userTypedSomething else { return }
+        let absoluteRow = terminal.getTopVisibleRow() + cursor.y
+        var text = ""
+        if let line = terminal.getLine(row: cursor.y) {
+            for i in 0..<terminal.cols {
+                let ch = line[i].getCharacter()
+                text.append(ch == "\0" ? " " : ch)
+            }
+        }
+        text = text.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return }
+        onUserCommandEntered?(text, absoluteRow)
     }
 }
 

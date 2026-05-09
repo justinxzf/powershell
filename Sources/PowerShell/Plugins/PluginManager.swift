@@ -8,11 +8,24 @@ final class PluginManager {
 
     private var plugins: [any PowerShellPlugin] = []
 
+    // Buffer of terminals created before plugins were registered, for replay on setup.
+    private var pendingTerminalEvents: [(terminal: InterceptingTerminalView, session: Session)] = []
+
     // SplitPlugin 在 setup() 时注册自身，供 RootContentView 直接观察
     private(set) var splitPlugin: SplitPlugin? = nil
 
     func registerSplitPlugin(_ plugin: SplitPlugin) {
         splitPlugin = plugin
+    }
+
+    // ChatListPlugin 在 setup() 时注册自身，绕过existential以保证SwiftUI观察
+    private(set) var chatListPlugin: ChatListPlugin? = nil
+
+    func registerChatListPlugin(_ plugin: ChatListPlugin) {
+        chatListPlugin = plugin
+        for (terminal, session) in pendingTerminalEvents {
+            plugin.terminalCreated(terminal, session: session)
+        }
     }
 
     func register(_ plugins: [any PowerShellPlugin]) {
@@ -46,6 +59,7 @@ final class PluginManager {
     // MARK: - Session Lifecycle Dispatch
 
     func dispatchTerminalCreated(_ terminal: InterceptingTerminalView, session: Session) {
+        pendingTerminalEvents.append((terminal, session))
         for plugin in plugins {
             plugin.terminalCreated(terminal, session: session)
         }
@@ -84,11 +98,35 @@ final class PluginManager {
     // MARK: - Layout & UI
 
     func firstOverlayView(size: CGSize) -> AnyView? {
-        plugins.lazy.compactMap { $0.overlayView(size: size) }.first
+        var views: [AnyView] = plugins.compactMap { plugin in
+            guard !(plugin is ChatListPlugin) else { return nil }
+            return plugin.overlayView(size: size)
+        }
+        if let view = chatListPlugin?.overlayView(size: size) {
+            views.append(view)
+        }
+        guard !views.isEmpty else { return nil }
+        return AnyView(
+            ZStack(alignment: .topLeading) {
+                ForEach(Array(views.enumerated()), id: \.offset) { _, view in view }
+            }
+        )
     }
 
     func firstHeaderAccessory(for session: Session, allSessions: [Session]) -> AnyView? {
-        plugins.lazy.compactMap { $0.headerAccessoryView(for: session, allSessions: allSessions) }.first
+        var views: [AnyView] = plugins.compactMap { plugin in
+            guard !(plugin is ChatListPlugin) else { return nil }
+            return plugin.headerAccessoryView(for: session, allSessions: allSessions)
+        }
+        if let view = chatListPlugin?.headerAccessoryView(for: session, allSessions: allSessions) {
+            views.append(view)
+        }
+        guard !views.isEmpty else { return nil }
+        return AnyView(
+            HStack(spacing: 4) {
+                ForEach(Array(views.enumerated()), id: \.offset) { _, view in view }
+            }
+        )
     }
 
     // MARK: - Settings UI
