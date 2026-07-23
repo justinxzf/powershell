@@ -156,8 +156,91 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
     // MARK: - Command capture
 
     var onUserCommandEntered: ((String, Int) -> Void)?
-    private var commandCaptureMonitor: Any?
+    private nonisolated(unsafe) var commandCaptureMonitor: Any?
     private var promptEndCursor: (x: Int, y: Int) = (0, 0)
+
+    // MARK: - Scroll wheel → arrow keys in alternate buffer
+
+    private nonisolated(unsafe) var scrollMonitor: Any?
+
+    /// Install a local event monitor that converts scroll-wheel events into
+    /// arrow-key sequences when the terminal is in alternate-buffer mode
+    /// (e.g. Claude Code TUI). This enables mouse-wheel scrolling in TUI apps
+    /// that don't implement mouse reporting themselves.
+    func setupScrollWheelForwarding() {
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self else { return event }
+            guard self.window != nil else { return event }
+
+            // Only intercept if the event targets our view (mouse inside our bounds)
+            let locationInView = self.convert(event.locationInWindow, from: nil)
+            guard self.bounds.contains(locationInView) else { return event }
+
+            // Only intercept in alternate buffer mode (TUI apps like Claude Code)
+            guard self.terminal.isCurrentBufferAlternate else { return event }
+
+            let deltaY = event.deltaY
+            guard deltaY != 0 else { return event }
+
+            // When mouse mode is active, send mouse wheel protocol events
+            // (button 4 = scroll up, button 5 = scroll down)
+            if self.terminal.mouseMode != .off {
+                self.scrollDeltaAccumulator += deltaY
+                let lines = Int(abs(self.scrollDeltaAccumulator))
+                guard lines > 0 else { return nil }
+                self.scrollDeltaAccumulator = 0
+
+                let flags = event.modifierFlags
+                // button 4 = scroll up (encodes to 64), button 5 = scroll down (encodes to 65)
+                let button = deltaY > 0 ? 4 : 5
+                let buttonFlags = self.terminal.encodeButton(
+                    button: button,
+                    release: false,
+                    shift: flags.contains(.shift),
+                    meta: flags.contains(.option),
+                    control: flags.contains(.control)
+                )
+
+                // Calculate grid position from mouse location
+                let cellWidth = self.frame.width / CGFloat(self.terminal.cols)
+                let cellHeight = self.frame.height / CGFloat(self.terminal.rows)
+                let col = Int(locationInView.x / cellWidth)
+                let row = Int((self.frame.height - locationInView.y) / cellHeight)
+                let clampedCol = min(max(0, col), self.terminal.cols - 1)
+                let clampedRow = min(max(0, row), self.terminal.rows - 1)
+
+                for _ in 0..<min(lines, 10) {
+                    self.terminal.sendEvent(buttonFlags: buttonFlags, x: clampedCol, y: clampedRow)
+                }
+            } else {
+                // No mouse mode: send arrow keys as fallback
+                self.scrollDeltaAccumulator += deltaY
+                let lines = Int(abs(self.scrollDeltaAccumulator))
+                guard lines > 0 else { return nil }
+                self.scrollDeltaAccumulator = 0
+
+                let arrowSeq: [UInt8] = self.terminal.applicationCursor
+                    ? (deltaY > 0 ? EscapeSequences.moveUpApp : EscapeSequences.moveDownApp)
+                    : (deltaY > 0 ? EscapeSequences.moveUpNormal : EscapeSequences.moveDownNormal)
+
+                for _ in 0..<min(lines, 10) {
+                    self.send(arrowSeq)
+                }
+            }
+            return nil // consume the event
+        }
+    }
+
+    private var scrollDeltaAccumulator: CGFloat = 0
+
+    deinit {
+        if let scrollMonitor {
+            NSEvent.removeMonitor(scrollMonitor)
+        }
+        if let commandCaptureMonitor {
+            NSEvent.removeMonitor(commandCaptureMonitor)
+        }
+    }
 
     // MARK: - Monitor output for attention signals
 
@@ -197,6 +280,7 @@ final class InterceptingTerminalView: LocalProcessTerminalView {
             self.captureCurrentLineAsCommand()
             return event
         }
+        setupScrollWheelForwarding()
     }
 
     private func captureCurrentLineAsCommand() {
