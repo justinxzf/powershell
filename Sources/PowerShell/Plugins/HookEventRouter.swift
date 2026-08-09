@@ -3,14 +3,7 @@ import Foundation
 @MainActor
 enum HookEventRouter {
 
-    static func wire(sessionManager: SessionManager) {
-        HookNotificationServer.shared.onHookNotification = { event in
-            coreRoute(event: event, sessionManager: sessionManager)
-            PluginManager.shared.dispatchHookEvent(event, sessionManager: sessionManager)
-        }
-    }
-
-    private static func coreRoute(event: HookEvent, sessionManager: SessionManager) {
+    static func coreRoute(event: HookEvent, sessionManager: SessionManager) {
         let claudeSessionId = event.session_id ?? ""
         DebugLog.write("[HookRouter] event=\(event.hook_event_name), session_id=\(claudeSessionId), type=\(event.notification_type ?? "nil"), psid=\(event.powershell_session_id ?? "nil")")
 

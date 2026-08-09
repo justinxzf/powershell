@@ -20,8 +20,8 @@ final class ChatListPlugin: PowerShellPlugin {
     fileprivate var terminalsBySession: [UUID: InterceptingTerminalView] = [:]
     var openSessionId: UUID? = nil
 
-    func setup() {
-        PluginManager.shared.registerChatListPlugin(self)
+    func setup(host: PluginManager) {
+        host.registerChatListPlugin(self)
     }
 
     func terminalCreated(_ terminal: InterceptingTerminalView, session: Session) {

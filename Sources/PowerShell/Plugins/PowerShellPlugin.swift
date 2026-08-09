@@ -10,7 +10,7 @@ protocol PowerShellPlugin: AnyObject {
 
     // MARK: - Lifecycle
 
-    func setup()
+    func setup(host: PluginManager)
 
     // MARK: - Hook Events
 

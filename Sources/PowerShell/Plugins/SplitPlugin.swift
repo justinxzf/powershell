@@ -23,8 +23,8 @@ final class SplitPlugin: PowerShellPlugin {
     var splitVRatio: Double = 0.5
     private var storedSplitLayout: SplitLayout? = nil
 
-    func setup() {
-        PluginManager.shared.registerSplitPlugin(self)
+    func setup(host: PluginManager) {
+        host.registerSplitPlugin(self)
     }
 
     // MARK: - Split Operations

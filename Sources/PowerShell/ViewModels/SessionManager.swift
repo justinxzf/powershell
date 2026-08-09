@@ -9,11 +9,14 @@ class SessionManager {
     var activeSessionId: UUID? {
         didSet {
             guard let sessionId = activeSessionId, sessionId != oldValue else { return }
-            PluginManager.shared.dispatchSessionDidActivate(sessionId: sessionId)
+            pluginHost?.dispatchSessionDidActivate(sessionId: sessionId)
             clearUnread(sessionId: sessionId)
         }
     }
     var unreadCounts: [UUID: Int] = [:]
+
+    // The per-window plugin host this session manager dispatches lifecycle events to.
+    weak var pluginHost: PluginManager?
 
     // Maps Claude Code session_id → app Session UUID
     private var claudeSessionMap: [String: UUID] = [:]
@@ -21,8 +24,38 @@ class SessionManager {
     // Maps POWERSHELL_SESSION_ID (session UUID string) → app Session UUID
     private var powershellSessionIndex: [String: UUID] = [:]
 
-    init() {
+    // Weak references to each session's live terminal, used to terminate the
+    // underlying PTY processes when the window is closed.
+    private final class WeakTerminal {
+        weak var value: InterceptingTerminalView?
+        init(_ value: InterceptingTerminalView) { self.value = value }
+    }
+    private var terminalsBySession: [UUID: WeakTerminal] = [:]
+
+    init(pluginHost: PluginManager? = nil) {
+        self.pluginHost = pluginHost
         _ = createSession()
+    }
+
+    // MARK: - Terminal registry / teardown
+
+    func registerTerminal(_ terminal: InterceptingTerminalView, for sessionId: UUID) {
+        terminalsBySession[sessionId] = WeakTerminal(terminal)
+    }
+
+    /// Terminates every live PTY owned by this window and clears all session
+    /// state. Called when the hosting window is closed so shell processes are
+    /// not left running in the background.
+    func terminateAllSessions() {
+        for (_, box) in terminalsBySession {
+            box.value?.terminate()
+        }
+        terminalsBySession.removeAll()
+        sessions.removeAll()
+        activeSessionId = nil
+        unreadCounts.removeAll()
+        claudeSessionMap.removeAll()
+        powershellSessionIndex.removeAll()
     }
 
     var activeSession: Session? {
@@ -59,7 +92,9 @@ class SessionManager {
     }
 
     func delete(sessionId: UUID) {
-        PluginManager.shared.dispatchSessionWillDelete(sessionId: sessionId)
+        pluginHost?.dispatchSessionWillDelete(sessionId: sessionId)
+        terminalsBySession[sessionId]?.value?.terminate()
+        terminalsBySession.removeValue(forKey: sessionId)
         sessions.removeAll { $0.id == sessionId }
         powershellSessionIndex.removeValue(forKey: sessionId.uuidString)
         if activeSessionId == sessionId {

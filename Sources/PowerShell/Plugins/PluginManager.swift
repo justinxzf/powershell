@@ -4,7 +4,8 @@ import SwiftUI
 @MainActor
 final class PluginManager {
 
-    static let shared = PluginManager()
+    // Per-window instance. Each window owns its own PluginManager so that
+    // stateful plugins (split layout, chat list) are isolated per window.
 
     private var plugins: [any PowerShellPlugin] = []
 
@@ -37,7 +38,7 @@ final class PluginManager {
 
     func runSetup() {
         for plugin in plugins {
-            plugin.setup()
+            plugin.setup(host: self)
         }
     }
 

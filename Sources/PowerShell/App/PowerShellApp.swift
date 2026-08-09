@@ -50,25 +50,24 @@ final class FullScreenToolbarConfigurator: NSObject, FullScreenToolbarPersisting
 @main
 struct PowerShellApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @State private var sessionManager = SessionManager()
     @State private var themeManager = ThemeManager()
+    // Stateless plugin host used only to surface plugin-contributed Settings
+    // sections (which are app-wide, not per-window).
+    @State private var settingsPluginHost = PowerShellApp.makeSettingsHost()
 
     var body: some Scene {
         WindowGroup {
-            RootContentView(
-                sessionManager: sessionManager,
-                themeManager: themeManager
-            )
+            RootContentView(themeManager: themeManager)
         }
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unifiedCompact(showsTitle: false))
         .commands {
             CommandGroup(after: .newItem) {
                 Button("New bash Session") {
-                    _ = sessionManager.createSession(shellType: .bash)
+                    _ = WindowRegistry.shared.keyOrFirstContext?.sessionManager.createSession(shellType: .bash)
                 }
                 Button("New zsh Session") {
-                    _ = sessionManager.createSession(shellType: .zsh)
+                    _ = WindowRegistry.shared.keyOrFirstContext?.sessionManager.createSession(shellType: .zsh)
                 }
             }
         }
@@ -76,27 +75,64 @@ struct PowerShellApp: App {
         Settings {
             SettingsView(
                 themeManager: themeManager,
-                pluginSettingsSections: PluginManager.shared.settingsSections()
+                pluginSettingsSections: settingsPluginHost.settingsSections()
             )
+        }
+    }
+
+    @MainActor
+    private static func makeSettingsHost() -> PluginManager {
+        let host = PluginManager()
+        host.register(PluginRegistry.makePlugins())
+        host.runSetup()
+        return host
+    }
+}
+
+/// Thin per-window wrapper. Creates the window's `WindowContext` lazily inside
+/// `.task` so it is constructed exactly once, avoiding SwiftUI's habit of
+/// evaluating `@State` initializer expressions multiple times.
+private struct RootContentView: View {
+    @State private var context: WindowContext?
+    let themeManager: ThemeManager
+    private let fullScreenToolbarConfigurator: FullScreenToolbarPersisting
+
+    init(
+        themeManager: ThemeManager,
+        fullScreenToolbarConfigurator: FullScreenToolbarPersisting = FullScreenToolbarConfigurator()
+    ) {
+        self.themeManager = themeManager
+        self.fullScreenToolbarConfigurator = fullScreenToolbarConfigurator
+    }
+
+    var body: some View {
+        ZStack {
+            if let context {
+                WindowRootView(
+                    context: context,
+                    themeManager: themeManager,
+                    fullScreenToolbarConfigurator: fullScreenToolbarConfigurator
+                )
+            }
+        }
+        .task {
+            guard context == nil else { return }
+            let ctx = WindowContext()
+            WindowRegistry.shared.configureGlobalsIfNeeded()
+            WindowRegistry.shared.register(ctx)
+            context = ctx
         }
     }
 }
 
-private struct RootContentView: View {
-    @Bindable var sessionManager: SessionManager
+private struct WindowRootView: View {
+    let context: WindowContext
     let themeManager: ThemeManager
     private let chrome = WindowChromeConfiguration.app
-    private let fullScreenToolbarConfigurator: FullScreenToolbarPersisting
+    let fullScreenToolbarConfigurator: FullScreenToolbarPersisting
 
-    init(
-        sessionManager: SessionManager,
-        themeManager: ThemeManager,
-        fullScreenToolbarConfigurator: FullScreenToolbarPersisting = FullScreenToolbarConfigurator()
-    ) {
-        self.sessionManager = sessionManager
-        self.themeManager = themeManager
-        self.fullScreenToolbarConfigurator = fullScreenToolbarConfigurator
-    }
+    private var sessionManager: SessionManager { context.sessionManager }
+    private var pluginHost: PluginManager { context.pluginHost }
 
     var body: some View {
         NavigationSplitView {
@@ -114,26 +150,12 @@ private struct RootContentView: View {
             }
         }
         .background(
-            FullScreenToolbarPersistenceView(configurator: fullScreenToolbarConfigurator)
-                .frame(width: 0, height: 0)
+            FullScreenToolbarPersistenceView(
+                configurator: fullScreenToolbarConfigurator,
+                onResolveWindow: { window in context.attach(to: window) }
+            )
+            .frame(width: 0, height: 0)
         )
-        .task {
-            PluginManager.shared.register(PluginRegistry.makePlugins())
-            PluginManager.shared.runSetup()
-
-            NotificationManager.shared.onNotificationClicked = { sessionIdString in
-                guard let sessionId = UUID(uuidString: sessionIdString) else { return }
-                sessionManager.switchTo(sessionId: sessionId)
-                NSApp.activate(ignoringOtherApps: true)
-            }
-
-            HookEventRouter.wire(sessionManager: sessionManager)
-
-            HookConfigurator.shared.configureIfNeeded()
-            HookNotificationServer.shared.start()
-            SkillInstaller.installIfNeeded()
-            PluginManager.shared.installSkills()
-        }
     }
 
     @ViewBuilder
@@ -144,7 +166,7 @@ private struct RootContentView: View {
                     terminalPane(for: session, geoWidth: geo.size.width, geoHeight: geo.size.height)
                 }
 
-                if let overlay = PluginManager.shared.firstOverlayView(size: geo.size) {
+                if let overlay = pluginHost.firstOverlayView(size: geo.size) {
                     overlay
                 }
 
@@ -157,7 +179,7 @@ private struct RootContentView: View {
 
     @ViewBuilder
     private func terminalPane(for session: Session, geoWidth: CGFloat, geoHeight: CGFloat) -> some View {
-        let sp = PluginManager.shared.splitPlugin
+        let sp = pluginHost.splitPlugin
         let inLayout = sp?.splitLayout?.contains(session.id) ?? false
         let isPrimary = sp?.isPrimary(sessionId: session.id) ?? false
         let isSingleActive = sp?.splitLayout == nil && session.id == sessionManager.activeSessionId
@@ -165,21 +187,22 @@ private struct RootContentView: View {
         let frame: CGRect = sp?.paneFrame(for: session.id, W: geoWidth, H: geoHeight)
             ?? CGRect(x: 0, y: 0, width: geoWidth, height: geoHeight)
 
-        let accessory = PluginManager.shared.firstHeaderAccessory(for: session, allSessions: sessionManager.sessions)
+        let accessory = pluginHost.firstHeaderAccessory(for: session, allSessions: sessionManager.sessions)
 
         TerminalDetailView(
             session: session,
             themeManager: themeManager,
+            pluginHost: pluginHost,
             isActive: isSingleActive || isPrimary,
             onSessionActivityChanged: { isActive in
                 sessionManager.setActiveActivity(sessionId: session.id, isActive: isActive)
                 if !isActive {
-                    PluginManager.shared.dispatchProcessTerminated(session: session)
+                    pluginHost.dispatchProcessTerminated(session: session)
                 }
             },
             onDirectoryChanged: { directory in
                 sessionManager.updateDirectory(sessionId: session.id, directory: directory)
-                PluginManager.shared.dispatchDirectoryChanged(to: directory, session: session)
+                pluginHost.dispatchDirectoryChanged(to: directory, session: session)
             },
             onAttentionNeeded: { type in
                 guard session.id != sessionManager.activeSessionId else { return }
@@ -196,7 +219,10 @@ private struct RootContentView: View {
             },
             onTerminalFocused: {
                 sessionManager.clearUnread(sessionId: session.id)
-                PluginManager.shared.dispatchTerminalFocused(session: session)
+                pluginHost.dispatchTerminalFocused(session: session)
+            },
+            onTerminalReady: { terminal in
+                sessionManager.registerTerminal(terminal, for: session.id)
             },
             headerAccessoryView: accessory
         )
@@ -225,6 +251,7 @@ private struct RootContentView: View {
 
 private struct FullScreenToolbarPersistenceView: NSViewRepresentable {
     let configurator: FullScreenToolbarPersisting
+    var onResolveWindow: ((NSWindow) -> Void)? = nil
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
@@ -239,6 +266,7 @@ private struct FullScreenToolbarPersistenceView: NSViewRepresentable {
     private func configure(from view: NSView) {
         guard let window = view.window else { return }
         configurator.apply(to: window)
+        onResolveWindow?(window)
     }
 }
 
@@ -264,6 +292,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         appIconProvider.applyAppIcon()
         NSApp.activate(ignoringOtherApps: true)
+        WindowRegistry.shared.configureGlobalsIfNeeded()
         DispatchQueue.main.async { [self] in
             setupFindMenu()
         }
@@ -319,6 +348,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // SwiftUI's WindowGroup keeps closed windows alive internally. Find the existing
         // content window and re-show it instead of letting SwiftUI spawn a duplicate.
         if let window = sender.windows.first(where: { !$0.isVisible && !($0 is NSPanel) }) {
+            // Recreate a fresh session if this window was previously closed
+            // (its shells were terminated on close).
+            WindowRegistry.shared.reopenContext(for: window)
             window.makeKeyAndOrderFront(nil)
             return false
         }
@@ -373,11 +405,13 @@ struct TerminalHeaderPresentation: Equatable {
 struct TerminalDetailView: View {
     let session: Session
     let themeManager: ThemeManager
+    let pluginHost: PluginManager
     let isActive: Bool
     let onSessionActivityChanged: (Bool) -> Void
     var onDirectoryChanged: ((String?) -> Void)?
     var onAttentionNeeded: ((AttentionType) -> Void)?
     var onTerminalFocused: (() -> Void)?
+    var onTerminalReady: ((InterceptingTerminalView) -> Void)?
     var headerAccessoryView: AnyView? = nil
 
     @StateObject private var terminalRef = TerminalReference()
@@ -446,7 +480,8 @@ struct TerminalDetailView: View {
                         }
 
                         terminal.setupOutputMonitor()
-                        PluginManager.shared.dispatchTerminalCreated(terminal, session: session)
+                        onTerminalReady?(terminal)
+                        pluginHost.dispatchTerminalCreated(terminal, session: session)
 
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                             terminalRef.focus()
