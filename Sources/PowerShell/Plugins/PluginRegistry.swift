@@ -6,6 +6,7 @@ enum PluginRegistry {
         [
             SplitPlugin(),
             ChatListPlugin(),
+            CommandPalettePlugin(),
         ]
     }
 }
